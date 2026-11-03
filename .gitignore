@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environment
+.venv/
+.env
+
+# Tools
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Run outputs and model weights
+runs/
+*.pth
