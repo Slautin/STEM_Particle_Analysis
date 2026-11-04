@@ -61,7 +61,10 @@ STEM_Particle_Analysis/
 │   └── utils/
 │       ├── safety.py          # @safe_node(undo=...)
 │       └── plots.py           # save PNGs to run folder
-├── scripts/check_mcp.py       # phase 0: list MCP tools, one test acquisition
+├── twin/digital_twin_particles.yaml   # particle twin + corrector, for scripts/twin.py
+├── scripts/
+│   ├── twin.py                # start / status / stop the twin + MCP in the background
+│   └── check_mcp.py           # block 0: list MCP tools, one test acquisition
 ├── notebooks/run_particle_analysis.ipynb
 └── tests/  fake_mcp.py  test_optimizer.py  test_segmentation.py  test_graph_fake.py
 ```
@@ -135,14 +138,26 @@ class ParticleRunState(TypedDict):
 
 ## 8. Plan
 
-| Phase | What | Done when | Time |
-|---|---|---|---|
-| 0 | Connect to MCP, list tools, tool-name map, check arguments and return formats | script prints every needed tool; one acquisition works | 0.5 day |
-| 1 | `analysis/` + `data/`: metrics, `QuadraticSearch`, segmentation, Tiled reader, fake microscope | unit tests pass | 1–2 days |
-| 2 | `mcp/ops.py` + nodes one by one on the particle twin (add corrector to twin yaml) | each node runs alone on the twin | 2 days |
-| 3 | State, graph, router, `safe_node`, save, notebook | full twin run gives particles, spectra, `summary.json` | 1 day |
-| 4 | Real microscope: run the checks, tune step sizes | one full run on a real sample | 1–2 sessions |
-| 5 (later) | LLM nodes (pick particles, image QC, summary), multi-position loop, B2/A2 | – | – |
+The work goes in blocks. Each block is tested on the digital twin with its own notebook, then the same notebooks run on the real microscope.
+
+For each block:
+
+1. Write the code in `src/stem_agent/`. Notebooks hold no logic, only calls and plots.
+2. Run the test notebook `notebooks/NN_<block>.ipynb` on the twin. Its first cell is `TARGET = "twin"`.
+3. Add pytest tests for the pure parts.
+4. Commit and review.
+
+| # | Block | What we build | Test notebook (twin) | Done when |
+|---|---|---|---|---|
+| 0 | Twin + connection | `twin/` config, `scripts/twin.py`, config, MCP client/session, Tiled image read | `00_connection.ipynb`: list tools, `get_stage`, one HAADF | the image comes back from the twin |
+| 1 | Microscope actions | `ops.py`: stage, FOV, HAADF, corrector, beam, EDS, status | `01_ops.ipynb`: call each action, check readback | every action works |
+| 2 | Analysis | metrics, `QuadraticSearch`, segmentation | `02_analysis.ipynb`: search on synthetic blur, Otsu on a twin image | the search finds the known best point; particles found |
+| 3 | Nodes | all nodes + `safe_node` | `03_nodes.ipynb`: hand-made state, each node alone, one forced error | each node runs alone; undo works |
+| 4 | Graph | state, router, save | `04_graph_twin.ipynb`: normal, no-particles and failure runs | `summary.json` + spectra in `runs/` |
+| 5 | Real microscope | checks only | notebooks 00 → 04 with `TARGET = "real"` | one full run on a real sample |
+| later | LLM nodes, multi-position loop, B2/A2 | – | – | – |
+
+**Digital twin:** run `uv run python scripts/twin.py start | status | stop`. It runs from `ASYNCROSCOPY_DIR` (an asyncroscopy `main` checkout) using that repo's own uv environment, with `twin/digital_twin_particles.yaml` (the particle twin plus a corrector). Logs go to `runs/twin_logs/`.
 
 In parallel: the asyncroscopy PR for scan and EDS settings commands.
 
