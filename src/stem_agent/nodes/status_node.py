@@ -123,7 +123,7 @@ def make_status_node(check_ready: bool):
         update = {"start": snap, "current": snap}
         if not snap["ready"]:
             update |= {"run_status": "failed",
-                       "error": f"{name}: not ready: {'; '.join(snap['problems'])}"}
+                       "errors": [f"{name}: not ready: {'; '.join(snap['problems'])}"]}
         return update
 
     status_node.__name__ = f"{name}_node"

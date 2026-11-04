@@ -34,15 +34,17 @@ class RunSettings(TypedDict):
     beam_order: NotRequired[str]               # override TARGETS[target]["beam_order"]
     tuning: NotRequired[dict[str, SearchSettings]]      # "z" / "C1" / "A1" -> overrides
     segmentation: NotRequired[SegmentationSettings]
+    blank_beam_at_end: NotRequired[bool]      # save node blanks the beam; default off
     run_tag: NotRequired[str]
 
 
 class RunInfo(TypedDict):
     run_dir: str
     target: str
-    mcp_url: str
-    tiled_uri: str
+    mcp_url: str | None                        # None if preflight failed before connecting
+    tiled_uri: str | None
     tools: dict[str, str]                      # short name -> MCP tool name
+    started: str                               # ISO time
 
 
 class InstrumentSnapshot(TypedDict):
@@ -119,4 +121,6 @@ class ParticleRunState(TypedDict):
     particles: NotRequired[list[Particle]]
     spectra: NotRequired[list[SpectrumRecord]]
     run_status: NotRequired[Literal["running", "ok", "no_particles", "failed"]]
-    error: NotRequired[str]
+    errors: NotRequired[Annotated[list[str], operator.add]]   # every failure, in order
+    finished: NotRequired[str]                 # ISO time, set by save
+    summary_path: NotRequired[str]             # summary.json

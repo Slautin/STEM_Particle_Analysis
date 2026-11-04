@@ -2,7 +2,7 @@
 
     safe_node(undo=None) -> decorator
         on any exception: print it, run undo(state) with the state the node received,
-        return {"run_status": "failed", "error": "<node>: <msg>"}
+        return {"run_status": "failed", "errors": ["<node>: <msg>"]}  (errors add up in the state)
         the graph router then jumps to status_end -> save
 """
 import functools
@@ -28,6 +28,6 @@ def safe_node(undo: Node | None = None) -> Callable[[Node], Node]:
                     except Exception as undo_exc:
                         message += f" | undo failed: {undo_exc}"
                         print(f"[{name}] UNDO FAILED: {undo_exc}")
-                return {"run_status": "failed", "error": message}
+                return {"run_status": "failed", "errors": [message]}
         return run
     return wrap

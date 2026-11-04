@@ -32,6 +32,17 @@ Logs: `runs/twin_logs/`. MCP: `http://127.0.0.1:8000/mcp`.
 
 The twin's images are 128 px (set by `twin.py` so its EDS lands on particles). Other twin quirks are listed in [docs/PLAN.md](docs/PLAN.md).
 
+## Run an analysis
+
+Open `notebooks/run_particle_analysis.ipynb`, edit the settings cell, run all. Or from Python:
+
+```python
+from stem_agent.graphs.particle_graph import run
+state = await run({"target": "twin", "target_xy_m": (5e-9, 0.0), "tuning_fov_m": 40e-9})
+```
+
+Results: `runs/<time>_<tag>/` (`summary.json`, `summary.png`, tuning plots, spectra).
+
 ## Test
 
 ```bash
@@ -39,7 +50,7 @@ uv run python scripts/check_mcp.py      # tools + one HAADF on the twin
 uv run pytest
 ```
 
-Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, `03_nodes_analysis.ipynb`, … (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
+Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, `03_nodes_analysis.ipynb`, `04_graph_twin.ipynb` (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
 
 ## Status
 
@@ -47,4 +58,5 @@ Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `
 - **Block 1 (instrument nodes: preflight, status, move, set FOV, overview, EDS):** done on the twin.
 - **Block 2 (analysis: metrics, quadratic search, Otsu segmentation):** done, checked against the notebook's code and on synthetic and twin images.
 - **Block 3 (tune z / C1 / A1, segment):** done; finding the optimum tested on a fake microscope, mechanics and restore on the twin.
-- The graph (block 4) is still a header; see the plan.
+- **Block 4 (graph, save, entry point):** done; normal, no-particles and failure runs checked on the twin.
+- **Next:** block 5, the real-microscope checks (see the plan).

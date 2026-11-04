@@ -184,6 +184,14 @@ Findings from block 3 (`tests/test_nodes_analysis.py`, `notebooks/03_nodes_analy
 - **Guards.** Preflight refuses `entropy` and `high_frequency_power` for tuning, a step larger than `max_offset`, a `max_offset` over half the per-move limit (z 50 µm, corrector 100 nm per call), and unknown setting names.
 - **Overview → segment → EDS on the twin:** 26 particles at a 40 nm FOV; EDS at the first 20 aim points gives 20 particle compositions.
 
+Findings from block 4 (`tests/test_graph_fake.py`, `notebooks/04_graph_twin.ipynb`, `notebooks/run_particle_analysis.ipynb`):
+
+- **The graph works end to end.** On the twin: a normal run ends `ok` (24 particles found, EDS on the capped 20, element compositions); a no-particles run goes `segment → status_end → save` with no EDS; a failure during focus restores z, jumps to `status_end → save`, and records the cause.
+- **Every run leaves a record**: `summary.json` (the whole state) and `summary.png` (overview + tuning + spectra), including failed runs and a failed preflight, because preflight now creates the run folder first.
+- **Errors add up** (`errors` is a list): a failure that is followed by a `status_end` failure keeps both messages.
+- **Not ready → nothing moves**: on the real-microscope settings with the beam blanked, no stage or corrector command is sent.
+- The graph figure is drawn locally (`plots.plot_graph`); `particle_graph.mermaid()` gives mermaid text. No web service is used.
+
 **Open decisions**
 
 1. Who opens the asyncroscopy PR for scan settings?

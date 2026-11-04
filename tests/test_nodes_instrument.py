@@ -26,12 +26,12 @@ async def test_preflight_creates_run(fake):
 async def test_preflight_missing_tool(fake):
     fake.remove_tool("place_beam")
     update = await preflight_node({"settings": settings()})
-    assert update["run_status"] == "failed" and "place_beam" in update["error"]
+    assert update["run_status"] == "failed" and "place_beam" in update["errors"][0]
 
 
 async def test_preflight_bad_settings(fake):
     update = await preflight_node({"settings": settings(tuning_fov_m=1.0)})
-    assert update["run_status"] == "failed" and "tuning_fov_m" in update["error"]
+    assert update["run_status"] == "failed" and "tuning_fov_m" in update["errors"][0]
 
 
 # --- status ---
@@ -67,7 +67,7 @@ async def test_status_real_ready(fake_real):
 async def test_status_real_unknown_stops(fake_real):
     del fake_real.params["beam_stopper"]
     state = await started("real")
-    assert state["run_status"] == "failed" and "beam_stopper_out unknown" in state["error"]
+    assert state["run_status"] == "failed" and "beam_stopper_out unknown" in state["errors"][0]
 
 
 async def test_status_bad_value_and_device(fake_real):
@@ -99,7 +99,7 @@ async def test_move_keeps_tilt(fake):
 async def test_move_over_limit_does_not_move(fake):
     state = await started(target_xy_m=(1.0, 0.0))
     update = await move_stage_node(state)
-    assert update["run_status"] == "failed" and "exceeds" in update["error"]
+    assert update["run_status"] == "failed" and "exceeds" in update["errors"][0]
     assert [args["position"][0] for args in fake.called("move_stage")] == [0.0]   # undo only
 
 
@@ -107,7 +107,7 @@ async def test_move_bad_readback_runs_undo(fake):
     fake.stage_error_m = 50e-9
     state = await started()
     update = await move_stage_node(state)
-    assert update["run_status"] == "failed" and "landed" in update["error"]
+    assert update["run_status"] == "failed" and "landed" in update["errors"][0]
     assert len(fake.called("move_stage")) == 2               # the move, then the undo
 
 
@@ -182,5 +182,5 @@ async def test_safe_node_runs_undo():
         raise RuntimeError("boom")
 
     update = await broken_node({"x": 1})
-    assert update == {"run_status": "failed", "error": "broken: RuntimeError: boom"}
+    assert update == {"run_status": "failed", "errors": ["broken: RuntimeError: boom"]}
     assert seen == [1]

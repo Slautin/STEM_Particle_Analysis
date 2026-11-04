@@ -1,15 +1,16 @@
 """Is the software ready? Read-only.
 
 Reads:   settings
-Writes:  run, run_status="running"
+Writes:  run, run_status ("running", or "failed" + errors; `run` is written in both cases)
 MCP:     list tools, DATA_get_config
 Checks:  every tool in config.TOOLS exists on the target; settings are in range;
          tuning metrics are in SAFE_METRICS; search limits fit the per-move limits
-Saves:   settings.json in a new run folder
+Saves:   settings.json in a new run folder, created before any check
 Undo:    none
 Source:  notebook cell 1 (partly)
 """
 import json
+from datetime import datetime
 
 from stem_agent.config import (LIMITS, SAFE_METRICS, TOOLS, TUNING, new_run, search_settings,
                                segmentation_settings)
@@ -52,26 +53,35 @@ def check_search(name: str, cfg: dict) -> None:
         raise ValueError(f"tuning {name}: max_iterations must be >= 0")
 
 
-@safe_node()
-async def preflight_node(state: dict) -> dict:
-    settings = state["settings"]
+async def check_software(settings: dict, run: dict) -> None:
+    """Settings, MCP connection, tools, Tiled. Fills `run` as it goes."""
     check_settings(settings)
-
     client = session.connect(settings["target"])
+    run["mcp_url"] = client.url
     tools = await client.list_tools()
     needed = {short: session.tool_name(short) for short in TOOLS}
     missing = sorted(short for short, name in needed.items() if name not in tools)
     if missing:
         raise InstrumentError(f"missing MCP tools on {client.url}: {missing}")
+    run["tools"] = needed
+    run["tiled_uri"] = json.loads(await session.call("get_tiled_config"))["uri"]
+    tiled_io.connect(run["tiled_uri"])
 
-    uri = json.loads(await session.call("get_tiled_config"))["uri"]
-    tiled_io.connect(uri)
 
+@safe_node()
+async def preflight_node(state: dict) -> dict:
+    settings = state["settings"]
+    # the run folder comes first, so that a failed preflight still leaves a record
     run_dir = new_run(settings.get("run_tag", ""))
-    (run_dir / "settings.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    (run_dir / "settings.json").write_text(json.dumps(settings, indent=2, default=str), encoding="utf-8")
+    run = {"run_dir": str(run_dir), "target": settings.get("target"), "mcp_url": None,
+           "tiled_uri": None, "tools": {}, "started": datetime.now().isoformat(timespec="seconds")}
+    try:
+        await check_software(settings, run)
+    except Exception as exc:
+        print(f"[preflight] FAILED: {exc}")
+        return {"run": run, "run_status": "failed", "errors": [f"preflight: {type(exc).__name__}: {exc}"]}
 
-    print(f"[preflight] {settings['target']} at {client.url}: {len(needed)}/{len(needed)} tools, "
-          f"Tiled {uri}, run folder {run_dir}")
-    run = {"run_dir": str(run_dir), "target": settings["target"], "mcp_url": client.url,
-           "tiled_uri": uri, "tools": needed}
+    print(f"[preflight] {run['target']} at {run['mcp_url']}: {len(run['tools'])}/{len(TOOLS)} tools, "
+          f"Tiled {run['tiled_uri']}, run folder {run_dir}")
     return {"run": run, "run_status": "running"}

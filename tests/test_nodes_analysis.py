@@ -82,7 +82,7 @@ async def test_failure_restores_z(fake):
     state = await started()
     fake.fail_image_after = 5                                             # 6th image fails
     update = await focus_z_node(state)
-    assert update["run_status"] == "failed" and "simulated acquisition failure" in update["error"]
+    assert update["run_status"] == "failed" and "simulated acquisition failure" in update["errors"][0]
     assert fake.stage[2] == pytest.approx(-5e-6)
 
 
@@ -108,7 +108,7 @@ async def test_failure_restores_corrector(fake, node, name):
 async def test_preflight_tuning_guards(fake, tuning, message):
     update = await preflight_node({"settings": {"target": "twin", "target_xy_m": (0.0, 0.0),
                                                 "tuning_fov_m": 40e-9, "tuning": tuning}})
-    assert update["run_status"] == "failed" and message in update["error"]
+    assert update["run_status"] == "failed" and message in update["errors"][0]
 
 
 # --- segment ---
