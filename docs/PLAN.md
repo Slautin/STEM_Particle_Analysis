@@ -155,7 +155,7 @@ For each block:
 | 2 | Analysis | metrics, `QuadraticSearch`, segmentation | `02_analysis.ipynb`: search on synthetic blur, Otsu on a twin image | the search finds the known best point; particles found |
 | 3 | Analysis nodes | tune (z / C1 / A1), segment | `03_nodes_analysis.ipynb`: each node alone on the twin | searches run within limits; particles found |
 | 4 | Graph | state, router, save | `04_graph_twin.ipynb`: normal, no-particles and failure runs | `summary.json` + spectra in `runs/` |
-| 5 | Real microscope | checks only | notebooks 00 → 04 with `TARGET = "real"` | one full run on a real sample |
+| 5 | Real microscope | `05_real_microscope.ipynb`: level by level, safety switches | MCP → nodes → instrument checks (metric response, corrector sign, beam order) → tuning → segmentation + EDS → your own graph → full run | one full run on a real sample |
 | later | LLM nodes, multi-position loop, B2/A2 | – | – | – |
 
 **Digital twin:** run `uv run python scripts/twin.py start | status | stop`. It runs from `ASYNCROSCOPY_DIR` (an asyncroscopy `main` checkout) using that repo's own uv environment, with `twin/digital_twin_particles.yaml` (the particle twin plus a corrector). Logs go to `runs/twin_logs/`.

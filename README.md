@@ -43,6 +43,10 @@ state = await run({"target": "twin", "target_xy_m": (5e-9, 0.0), "tuning_fov_m":
 
 Results: `runs/<time>_<tag>/` (`summary.json`, `summary.png`, tuning plots, spectra).
 
+## On the real microscope
+
+`notebooks/05_real_microscope.ipynb` goes level by level: MCP and data → single nodes → instrument checks (metric response, corrector sign, beam x/y order) → tuning → segmentation and EDS → your own graph → full run. Safety switches (`ALLOW_STAGE`, `ALLOW_CORRECTOR`, `ALLOW_BEAM`) are off by default, so nothing moves until you switch it on. Dry-run it first with `TARGET = "twin"`.
+
 ## Test
 
 ```bash
@@ -50,7 +54,7 @@ uv run python scripts/check_mcp.py      # tools + one HAADF on the twin
 uv run pytest
 ```
 
-Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, `03_nodes_analysis.ipynb`, `04_graph_twin.ipynb` (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
+Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, `03_nodes_analysis.ipynb`, `04_graph_twin.ipynb`, `05_real_microscope.ipynb` (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
 
 ## Status
 
@@ -59,4 +63,4 @@ Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `
 - **Block 2 (analysis: metrics, quadratic search, Otsu segmentation):** done, checked against the notebook's code and on synthetic and twin images.
 - **Block 3 (tune z / C1 / A1, segment):** done; finding the optimum tested on a fake microscope, mechanics and restore on the twin.
 - **Block 4 (graph, save, entry point):** done; normal, no-particles and failure runs checked on the twin.
-- **Next:** block 5, the real-microscope checks (see the plan).
+- **Block 5 (real microscope):** `notebooks/05_real_microscope.ipynb` is ready (dry-run checked on the twin); to be run on the instrument.

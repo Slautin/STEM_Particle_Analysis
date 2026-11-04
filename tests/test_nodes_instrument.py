@@ -184,3 +184,10 @@ async def test_safe_node_runs_undo():
     update = await broken_node({"x": 1})
     assert update == {"run_status": "failed", "errors": ["broken: RuntimeError: boom"]}
     assert seen == [1]
+
+
+async def test_overview_uses_live_fov(fake):
+    state = await started()                    # status recorded 20 nm
+    fake.fov = 186e-9                          # changed outside the state
+    update = await overview_node(state)
+    assert update["overview"]["fov_m"] == pytest.approx(186e-9)
