@@ -54,10 +54,12 @@ class Overview(TypedDict):
 
 
 class Particle(TypedDict):
-    id: int
-    row: float                                 # centre in overview pixels
-    col: float
+    id: int                                    # 1 = largest
+    row: float                                 # beam aim point in overview pixels:
+    col: float                                 #   the pixel deepest inside the particle
     area_px: NotRequired[int]
+    centroid: NotRequired[list[float]]         # centre of mass [row, col]
+    label: NotRequired[int]                    # value in the segmentation label image
 
 
 class SpectrumRecord(TypedDict):

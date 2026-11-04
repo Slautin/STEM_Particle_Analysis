@@ -39,10 +39,11 @@ uv run python scripts/check_mcp.py      # tools + one HAADF on the twin
 uv run pytest
 ```
 
-Block notebooks: `notebooks/00_connection.ipynb`, `notebooks/01_nodes_instrument.ipynb`, … (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
+Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, … (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
 
 ## Status
 
 - **Block 0 (twin + connection):** done.
 - **Block 1 (instrument nodes: preflight, status, move, set FOV, overview, EDS):** done on the twin.
-- Analysis, tuning, segmentation and the graph are still headers; see the plan.
+- **Block 2 (analysis: metrics, quadratic search, Otsu segmentation):** done, checked against the notebook's code and on synthetic and twin images.
+- The tuning and segmentation nodes and the graph are still headers; see the plan.

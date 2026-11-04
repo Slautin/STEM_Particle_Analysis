@@ -2,13 +2,13 @@
 
 Uses matplotlib.figure.Figure directly, so it never changes the notebook backend.
 
-Done:
     save_image(image, path, title, points=None)    overview preview, optional marked points
     plot_spectra(spectra, labels, path, elements)  EDS: channel lines, or element bars (twin)
-
-Planned (block 3):
-    plot_search(history, name, metric, path)        notebook show_progress_z / show_progress_abb
-    plot_overview(image, labels, particles, path)   notebook cell 24
+    plot_search(search, title, unit, path, truth)  measured points + fitted curve / surface
+                                                   (notebook show_progress_z / show_progress_abb)
+    plot_particles(image, labels, particles, title, path)
+                                                   outlines + numbered aim points (notebook cell 24)
+The plot_* functions return the Figure (shown by Jupyter) and save it when a path is given.
 """
 from pathlib import Path
 
@@ -53,3 +53,63 @@ def plot_spectra(spectra: list[np.ndarray], labels: list[str], path: str | Path,
     ax.legend(frameon=False, fontsize=8)
     fig.savefig(path, dpi=100)
     return Path(path)
+
+
+def plot_search(search, title: str = "", unit: float = 1e-9, unit_name: str = "nm",
+                path: str | Path | None = None, truth=None) -> Figure:
+    """Left: score per measurement. Right: score vs offset (1D) or path on the fit (2D)."""
+    offsets = np.array([p.offset for p in search.history]) / unit
+    scores = np.array([p.score for p in search.history])
+    best = search.best()
+    fig = Figure(figsize=(11, 4), layout="constrained")
+    ax_order, ax_map = fig.subplots(1, 2)
+    ax_order.plot(scores, "o-", color="0.5")
+    ax_order.set(xlabel="measurement", ylabel="score", title="score per measurement")
+
+    if search.dims == 1:
+        if len(scores) >= 3:
+            margin = max(np.ptp(offsets) * 0.15, 1e-12)
+            grid = np.linspace(offsets.min() - margin, offsets.max() + margin, 400)
+            ax_map.plot(grid, search.predict(grid * unit), color="tab:blue", label="quadratic fit")
+        ax_map.scatter(offsets[:, 0], scores, c=np.arange(len(scores)), cmap="viridis", zorder=3)
+        ax_map.plot(best.offset[0] / unit, best.score, "*", ms=16, color="tab:red", label="best")
+        if truth is not None:
+            ax_map.axvline(np.atleast_1d(truth)[0] / unit, color="tab:green", ls="--", label="true optimum")
+        ax_map.set(xlabel=f"offset ({unit_name})", ylabel="score")
+    else:
+        if len(scores) >= 6:
+            margin = max(np.ptp(offsets), 1e-12) * 0.2
+            gx = np.linspace(offsets[:, 0].min() - margin, offsets[:, 0].max() + margin, 100)
+            gy = np.linspace(offsets[:, 1].min() - margin, offsets[:, 1].max() + margin, 100)
+            xx, yy = np.meshgrid(gx, gy)
+            surface = search.predict(np.column_stack([xx.ravel(), yy.ravel()]) * unit).reshape(xx.shape)
+            ax_map.contourf(xx, yy, surface, levels=24, cmap="viridis", alpha=0.8)
+        ax_map.plot(offsets[:, 0], offsets[:, 1], color="0.6", lw=0.8)
+        ax_map.scatter(offsets[:, 0], offsets[:, 1], c=scores, cmap="viridis", edgecolor="white", zorder=3)
+        ax_map.plot(*(best.offset / unit), "*", ms=16, color="tab:red", label="best")
+        if truth is not None:
+            ax_map.plot(*(np.asarray(truth) / unit), "+", ms=16, mew=2, color="tab:green", label="true optimum")
+        ax_map.set(xlabel=f"component 1 ({unit_name})", ylabel=f"component 2 ({unit_name})", aspect="equal")
+    ax_map.set_title(f"stop: {search.stop_reason}, {len(scores)} measurements")
+    ax_map.legend(frameon=False, fontsize=8)
+    fig.suptitle(title)
+    if path is not None:
+        fig.savefig(path, dpi=100)
+    return fig
+
+
+def plot_particles(image: np.ndarray, labels: np.ndarray, particles: list[dict], title: str = "",
+                   path: str | Path | None = None) -> Figure:
+    fig = Figure(figsize=(6, 6), layout="constrained")
+    ax = fig.add_subplot()
+    ax.imshow(image, cmap="gray", interpolation="none")
+    ax.contour(labels > 0, levels=[0.5], colors="cyan", linewidths=0.8)
+    for particle in particles:
+        ax.plot(particle["col"], particle["row"], "o", mfc="none", mec="tab:red", ms=8, mew=1.5)
+        ax.text(particle["col"] + 3, particle["row"] - 3, str(particle["id"]), color="tab:red",
+                fontsize=8, weight="bold")
+    ax.set_title(title or f"{len(particles)} particles")
+    ax.axis("off")
+    if path is not None:
+        fig.savefig(path, dpi=100)
+    return fig

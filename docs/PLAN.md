@@ -169,7 +169,13 @@ Twin quirks found in block 1 (asyncroscopy bugs, worked around here):
 
 In parallel: the asyncroscopy PR for scan and EDS settings commands.
 
+Findings from block 2 (`notebooks/02_analysis.ipynb`, synthetic images):
+
+- **Metrics.** `contrast` and `edge_sharpness` fall steadily with blur, with or without noise, so they are safe to maximize. `entropy` **rises** with blur, so maximizing it defocuses. `high_frequency_power` falls near focus but rises again further out and with noise, because noise and the image's non-periodic edges keep a fixed high-frequency share. In the 1D search, `contrast` and `edge_sharpness` end about 0.2–0.3 step from the optimum; `entropy` and `high_frequency_power` end 10–19 steps away. Use `contrast` (the notebook default) or `edge_sharpness`.
+- **Search vs notebook.** `QuadraticSearch` matches the notebook code. Over 60 random peaks, the first model point is identical in 100 % (z, C1) and 93 % (A1) of cases; the rest are 1–2 grid steps away, at ties. Accuracy and the number of measurements are the same. The notebook's grids put candidates exactly on its r/40 and disk edges, so at a tie its choice depends on float rounding (units, start z). The new code follows exact arithmetic there.
+- **Segmentation.** Otsu with settings in nm finds 20 of 20 synthetic particles. On the twin, dim particles are missed: one global threshold does not catch particles much fainter than the others. SAM (optional extra) or a local threshold would help.
+
 **Open decisions**
 
-1. Test the focus searches with synthetic tests only, or also patch the twin?
-2. Who opens the asyncroscopy PR for scan settings?
+1. Who opens the asyncroscopy PR for scan settings?
+2. Add SAM segmentation (the optional `sam` extra) now, or after the graph works?
