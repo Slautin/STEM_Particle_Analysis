@@ -30,6 +30,8 @@ uv run python scripts/twin.py stop
 
 Logs: `runs/twin_logs/`. MCP: `http://127.0.0.1:8000/mcp`.
 
+The twin's images are 128 px (set by `twin.py` so its EDS lands on particles). Other twin quirks are listed in [docs/PLAN.md](docs/PLAN.md).
+
 ## Test
 
 ```bash
@@ -37,8 +39,10 @@ uv run python scripts/check_mcp.py      # tools + one HAADF on the twin
 uv run pytest
 ```
 
-Block notebooks: `notebooks/00_connection.ipynb`, … (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
+Block notebooks: `notebooks/00_connection.ipynb`, `notebooks/01_nodes_instrument.ipynb`, … (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
 
 ## Status
 
-Block 0 (twin + connection) done. Other modules are headers; see the plan.
+- **Block 0 (twin + connection):** done.
+- **Block 1 (instrument nodes: preflight, status, move, set FOV, overview, EDS):** done on the twin.
+- Analysis, tuning, segmentation and the graph are still headers; see the plan.

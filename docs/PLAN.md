@@ -23,8 +23,10 @@ any failure (after undo) → status_end → save
 ## 3. Layers
 
 ```
-node → mcp/ops.py → mcp/session.py → MCP server → Tango → microscope
+node → mcp/session.py → MCP server → Tango → microscope
 ```
+
+- Nodes call MCP tools directly through `session.call(short_name, value)`. Only the actions used by several nodes live in `nodes/common.py`: `get_stage`, `move_stage` (keeps tilt, step limit, readback check) and `acquire_haadf`.
 
 - Full images and spectra are read from **Tiled over HTTP**, because MCP returns only a preview.
 - Metrics, search math and segmentation run **locally**, with no microscope.
@@ -38,9 +40,7 @@ STEM_Particle_Analysis/
 │   ├── config.py              # MCP URL, tool-name map, limits, step sizes, run folders
 │   ├── mcp/
 │   │   ├── client.py          # MultiServerMCPClient wrapper (from SPM)
-│   │   ├── session.py         # call(short_name, args), InstrumentError
-│   │   └── ops.py             # get_stage, move_stage, set_fov, acquire_haadf, correct,
-│   │                          # place_beam, acquire_eds, get_status (real + twin → one format)
+│   │   └── session.py         # call(short_name, value), InstrumentError
 │   ├── data/tiled_io.py       # read_image, read_spectrum (real 4096-ch + twin per-element)
 │   ├── analysis/
 │   │   ├── metrics.py         # contrast, edge_sharpness, entropy, high_frequency_power
@@ -48,6 +48,7 @@ STEM_Particle_Analysis/
 │   │   └── segmentation.py    # otsu (default), sam (optional)
 │   ├── states/experiment_state.py
 │   ├── nodes/
+│   │   ├── common.py          # get_stage, move_stage, acquire_haadf (shared by several nodes)
 │   │   ├── preflight_node.py
 │   │   ├── status_node.py     # make_status_node(check_ready=True/False)
 │   │   ├── move_stage_node.py
@@ -65,13 +66,13 @@ STEM_Particle_Analysis/
 ├── scripts/
 │   ├── twin.py                # start / status / stop the twin + MCP in the background
 │   └── check_mcp.py           # block 0: list MCP tools, one test acquisition
-├── notebooks/run_particle_analysis.ipynb
-└── tests/  fake_mcp.py  test_optimizer.py  test_segmentation.py  test_graph_fake.py
+├── notebooks/  00_connection, 01_nodes_instrument, … (one per block), run_particle_analysis
+└── tests/  fake_mcp.py  test_session.py  test_nodes_instrument.py  test_optimizer.py  …
 ```
 
 ## 5. Nodes
 
-Every node has the same shape: `async def x_node(state) -> dict`. It reads its inputs, acts through `ops`, reads data from Tiled, computes locally, saves files, and returns only what it changed.
+Every node has the same shape: `async def x_node(state) -> dict`. It reads its inputs, calls MCP (directly, or through `nodes/common.py`), reads data from Tiled, computes locally, saves files, and returns only what it changed. Nodes that change the microscope are wrapped in `@safe_node(undo=...)`.
 
 | Node | MCP calls | Writes | Undo on error | From notebook | On twin |
 |---|---|---|---|---|---|
@@ -150,14 +151,21 @@ For each block:
 | # | Block | What we build | Test notebook (twin) | Done when |
 |---|---|---|---|---|
 | 0 | Twin + connection | `twin/` config, `scripts/twin.py`, config, MCP client/session, Tiled image read | `00_connection.ipynb`: list tools, `get_stage`, one HAADF | the image comes back from the twin |
-| 1 | Microscope actions | `ops.py`: stage, FOV, HAADF, corrector, beam, EDS, status | `01_ops.ipynb`: call each action, check readback | every action works |
+| 1 | Instrument nodes | preflight, status, move, set_fov, overview, eds, `nodes/common.py`, `safe_node` | `01_nodes_instrument.ipynb`: hand-made state, each node alone, beam-order test, one forced error | readbacks match; EDS hits particles; undo works |
 | 2 | Analysis | metrics, `QuadraticSearch`, segmentation | `02_analysis.ipynb`: search on synthetic blur, Otsu on a twin image | the search finds the known best point; particles found |
-| 3 | Nodes | all nodes + `safe_node` | `03_nodes.ipynb`: hand-made state, each node alone, one forced error | each node runs alone; undo works |
+| 3 | Analysis nodes | tune (z / C1 / A1), segment | `03_nodes_analysis.ipynb`: each node alone on the twin | searches run within limits; particles found |
 | 4 | Graph | state, router, save | `04_graph_twin.ipynb`: normal, no-particles and failure runs | `summary.json` + spectra in `runs/` |
 | 5 | Real microscope | checks only | notebooks 00 → 04 with `TARGET = "real"` | one full run on a real sample |
 | later | LLM nodes, multi-position loop, B2/A2 | – | – | – |
 
 **Digital twin:** run `uv run python scripts/twin.py start | status | stop`. It runs from `ASYNCROSCOPY_DIR` (an asyncroscopy `main` checkout) using that repo's own uv environment, with `twin/digital_twin_particles.yaml` (the particle twin plus a corrector). Logs go to `runs/twin_logs/`.
+
+Twin quirks found in block 1 (asyncroscopy bugs, worked around here):
+
+- The twin keeps particle positions on a 128 px map but checks the EDS beam in image pixels, so EDS only works when the image is 128 px too. `twin.py start` sets `scan.imsize = 128`.
+- Images fail at some FOVs (50, 100 and 200 nm at 512 px) because of a rounding mismatch in the twin's image size. Notebooks use FOVs that work (20, 40, 186 nm).
+- The twin's beam order is `row_col`: beam x follows image rows. The real microscope is assumed to be `col_row`, which is still to be checked.
+- Device `State` comes back over MCP as a number in text (`'0'` = ON).
 
 In parallel: the asyncroscopy PR for scan and EDS settings commands.
 

@@ -1,16 +1,15 @@
 """Read full images and spectra from Tiled by key (HTTP, not MCP).
 
-Done (block 0):
     connect(uri)                               tiled.client.from_uri, reused per URI
     read_image(key, detector="HAADF") -> ndarray
-
-Planned (block 1):
-    read_spectrum(key) -> tuple[ndarray, list[str] | None]
-                                               real: 4096 channels; twin: one value per element
-                                               (element names from dataset attrs)
+    read_spectrum(key) -> (values, elements | None)
+                                               real: channel counts (4096); twin: one value per
+                                               element, names in the dataset metadata
 
 Source: notebook cell 3 (read_haadf), cell 18 (spectrum read)
 """
+import json
+
 import numpy as np
 from tiled.client import from_uri
 
@@ -49,3 +48,20 @@ def read_image(key: str, detector: str = "HAADF") -> np.ndarray:
         if child is not None:
             node = child
     return np.asarray(node.read(), dtype=np.float64)
+
+
+def read_spectrum(key: str) -> tuple[np.ndarray, list[str] | None]:
+    """Acquisition layout: <key>/spectrum. Element names (twin) come from its metadata."""
+    node = _tiled()[key]
+    child = _child(node, "spectrum")
+    if child is not None:
+        node = child
+    values = np.atleast_1d(np.squeeze(np.asarray(node.read(), dtype=np.float64)))   # 1 element stays 1-D
+    elements = dict(getattr(node, "metadata", None) or {}).get("elements")
+    if elements is None:
+        return values, None
+    if isinstance(elements, bytes):
+        elements = elements.decode()
+    if isinstance(elements, str):                    # HDF5 attrs keep lists as JSON text
+        elements = json.loads(elements) if elements.startswith("[") else [elements]
+    return values, [e.decode() if isinstance(e, bytes) else str(e) for e in elements]

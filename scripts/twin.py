@@ -28,6 +28,12 @@ LOG_DIR = ROOT / "runs" / "twin_logs"
 PID_FILE = LOG_DIR / "pids.json"
 PORTS = {"tango": 9094, "tiled": 9091, "mcp": 8000}
 
+# Tango attributes set once after the device stack is up (they cannot come from the YAML).
+# scan.imsize must equal world_imsize in twin/digital_twin_particles.yaml: the particle twin
+# keeps particle positions on a world_imsize grid but compares them with the EDS beam in
+# image pixels, so EDS only lands on particles when the two sizes match.
+TWIN_ATTRIBUTES = {"asyncroscopy/scan/default": {"imsize": 128}}
+
 # name -> (command, line in the log that means "ready", timeout in s)
 SERVICES = {
     "servers": (["uv", "run", "startup_scripts/run_servers.py", "--yaml", str(TWIN_YAML)],
@@ -82,6 +88,23 @@ def wait_ready(name: str, proc: subprocess.Popen, log: Path, marker: str, timeou
     sys.exit(f"[twin] {name} not ready after {timeout:.0f} s; see {log}")
 
 
+def set_twin_attributes(cwd: Path, env: dict) -> None:
+    """Write TWIN_ATTRIBUTES through Tango, using asyncroscopy's environment."""
+    code = ("import json, tango\n"
+            f"for device, attrs in json.loads({json.dumps(json.dumps(TWIN_ATTRIBUTES))}).items():\n"
+            "    proxy = tango.DeviceProxy(device)\n"
+            "    for name, value in attrs.items():\n"
+            "        setattr(proxy, name, value)\n"
+            "        print(f'{device}.{name} = {getattr(proxy, name)}')\n")
+    env = {**env, "TANGO_HOST": f"127.0.0.1:{PORTS['tango']}"}
+    done = subprocess.run(["uv", "run", "python", "-c", code], cwd=cwd, env=env,
+                          capture_output=True, text=True)
+    if done.returncode != 0:
+        sys.exit(f"[twin] setting twin attributes failed:\n{done.stderr[-2000:]}")
+    for line in done.stdout.splitlines():
+        print(f"[twin] set {line}")
+
+
 def start() -> None:
     busy = [f"{k}:{p}" for k, p in PORTS.items() if port_open(p)]
     if busy:
@@ -105,6 +128,8 @@ def start() -> None:
         if proc.poll() is not None:                  # marker flushed on exit, not a real start
             sys.exit(f"[twin] {name} exited with code {proc.returncode}; see {log}")
         print(f"[twin] {name} ready: {line}")
+        if name == "servers":
+            set_twin_attributes(cwd, env)
     print(f"[twin] MCP at http://127.0.0.1:{PORTS['mcp']}/mcp")
 
 

@@ -14,7 +14,7 @@ instrument:
   properties:
     sample_seed: 12345
     sample_particle_count: 40
-    world_imsize: 128
+    world_imsize: 128          # scripts/twin.py sets scan.imsize to the same value (EDS needs it)
 
 devices:
   data:
