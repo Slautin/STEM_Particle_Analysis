@@ -112,20 +112,31 @@ def stop() -> None:
     pids = read_pids()
     if not pids:
         print("[twin] nothing to stop (no pid file)")
-        return
     for name in reversed(list(pids)):                # MCP first, then the device stack
         pid = pids[name]
-        if not alive(pid):
-            continue
-        os.killpg(pid, signal.SIGTERM)
-        for _ in range(60):
+        # SIGINT first: like Ctrl+C, the asyncroscopy launchers then stop the servers
+        # they started in their own process groups (run_mcp.py ignores SIGTERM for that)
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
             if not alive(pid):
                 break
-            time.sleep(0.5)
-        else:
-            os.killpg(pid, signal.SIGKILL)
+            try:
+                os.killpg(pid, sig)
+            except ProcessLookupError:
+                break
+            for _ in range(60):
+                if not alive(pid):
+                    break
+                time.sleep(0.5)
         print(f"[twin] stopped {name} (pid {pid})")
     PID_FILE.unlink(missing_ok=True)
+
+    for _ in range(10):
+        left = [f"{k}:{p}" for k, p in PORTS.items() if port_open(p)]
+        if not left:
+            return
+        time.sleep(0.5)
+    print(f"[twin] WARNING: ports still open ({', '.join(left)}); "
+          f"find the process with `lsof -nP -iTCP -sTCP:LISTEN`")
 
 
 def status() -> None:
