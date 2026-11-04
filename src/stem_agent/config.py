@@ -1,15 +1,16 @@
 """Project settings. One place for every number and name.
 
-Done:
     TARGETS                   "twin" / "real": MCP URL, Tango class names, beam order, strictness
     TOOLS                     short name -> (device role, Tango command)
     LIMITS                    hard safety limits (unit-mistake guards) and readback tolerances
     READY_CHECKS              status_start conditions; BAD_DEVICE_STATES
+    TUNING, SAFE_METRICS      search defaults for z / C1 / A1; metrics allowed for tuning
+    SEGMENTATION              segmentation defaults (nm)
+    search_settings(settings, name), segmentation_settings(settings)
+                              defaults merged with the run's overrides
     RUNS_ROOT, new_run(tag)   run folder: runs/<timestamp>_<tag>/
 
-Planned (later blocks):
-    DEFAULT_SETTINGS          RunSettings defaults (step sizes, metrics, iterations from the notebook)
-    search limits             max z offset, max C1/A1 offset (tune node)
+Planned:
     READ_RETRY                RetryPolicy for read-only calls, network errors only
 """
 import os
@@ -67,12 +68,44 @@ MCP_TIMEOUT_S = 60.0
 
 LIMITS = {
     "max_xy_move_m":       100e-6,         # one stage move in x/y
-    "max_z_step_m":        25e-6,          # one stage move in z
+    "max_z_step_m":        50e-6,          # one stage move in z
+    "max_corrector_step_m": 100e-9,        # one correct_aberration call, per component
     "fov_range_m":         (1e-9, 50e-6),
     "stage_tolerance_m":   10e-9,          # readback vs target, per axis
     "fov_rel_tolerance":   0.01,
     "max_particles":       20,             # EDS points per run
 }
+
+# Search defaults from the notebook (cells 10, 13, 15); a run overrides them with
+# settings["tuning"][name]. max_offset must be <= half the per-move limit above, so that
+# any jump inside +-max_offset is one allowed move (checked by preflight).
+TUNING = {
+    "z":  {"metric": "contrast", "step_m": 1e-6,  "max_offset_m": 20e-6, "max_iterations": 20},
+    "C1": {"metric": "contrast", "step_m": 10e-9, "max_offset_m": 50e-9, "max_iterations": 8},
+    "A1": {"metric": "contrast", "step_m": 2e-9,  "max_offset_m": 10e-9, "max_iterations": 8},
+}
+# block 2: entropy rises with blur and high_frequency_power rises again with noise, so
+# maximizing either drives toward blur
+SAFE_METRICS = ("contrast", "edge_sharpness")
+
+SEGMENTATION = {"method": "otsu", "smooth_nm": 0.3, "min_diameter_nm": 1.0, "edge_px": 1}
+
+
+def search_settings(settings: dict, name: str) -> dict:
+    """TUNING[name] with the run's overrides; unknown keys are an error (typo guard)."""
+    override = (settings.get("tuning") or {}).get(name, {})
+    unknown = set(override) - set(TUNING[name])
+    if unknown:
+        raise ValueError(f"unknown tuning settings for {name}: {sorted(unknown)}")
+    return {**TUNING[name], **override}
+
+
+def segmentation_settings(settings: dict) -> dict:
+    override = settings.get("segmentation") or {}
+    unknown = set(override) - set(SEGMENTATION)
+    if unknown:
+        raise ValueError(f"unknown segmentation settings: {sorted(unknown)}")
+    return {**SEGMENTATION, **override}
 
 # status_start: normalized field -> required value
 READY_CHECKS = {

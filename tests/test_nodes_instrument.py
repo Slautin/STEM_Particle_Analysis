@@ -3,37 +3,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from fake_mcp import FakeMicroscope
+from conftest import settings, started
 
 from stem_agent.nodes.eds_node import beam_position, eds_node
 from stem_agent.nodes.move_stage_node import move_stage_node
 from stem_agent.nodes.overview_node import overview_node
 from stem_agent.nodes.preflight_node import preflight_node
 from stem_agent.nodes.set_fov_node import set_fov_node
-from stem_agent.nodes.status_node import (device_state, normalize_parameters, status_end_node,
-                                          status_start_node)
+from stem_agent.nodes.status_node import device_state, normalize_parameters, status_end_node
 from stem_agent.utils.safety import safe_node
-
-
-@pytest.fixture
-def fake(monkeypatch, tmp_path):
-    return FakeMicroscope("twin").install(monkeypatch, tmp_path)
-
-
-@pytest.fixture
-def fake_real(monkeypatch, tmp_path):
-    return FakeMicroscope("real").install(monkeypatch, tmp_path)
-
-
-def settings(target="twin", **extra):
-    return {"target": target, "target_xy_m": (100e-9, 0.0), "tuning_fov_m": 40e-9, **extra}
-
-
-async def started(target="twin", **extra) -> dict:
-    """preflight + status_start, as the graph would run them."""
-    state = {"settings": settings(target, **extra)}
-    state = {**state, **await preflight_node(state)}
-    return {**state, **await status_start_node(state)}
 
 
 # --- preflight ---
@@ -154,7 +132,7 @@ async def test_set_fov_out_of_range(fake):
 async def test_overview(fake):
     state = await started()
     update = await overview_node(state)
-    assert update["overview"]["tiled_key"] == "image-key"
+    assert update["overview"]["tiled_key"] == "image-1"
     assert update["overview"]["shape"] == [64, 64]
     assert Path(update["overview"]["preview_path"]).exists()
 

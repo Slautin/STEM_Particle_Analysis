@@ -4,12 +4,25 @@ Rules:
     no pixel arrays in state, only Tiled keys and file paths
     nodes return only the keys they change
     start is never changed
-
-Planned (block 3): SearchSettings, TuneResult, Segmentation; tuning offsets in InstrumentSnapshot.
 """
-from typing import Literal
+import operator
+from typing import Annotated, Literal
 
 from typing_extensions import NotRequired, TypedDict
+
+
+class SearchSettings(TypedDict, total=False):  # overrides of config.TUNING[name]
+    metric: str                                # config.SAFE_METRICS only
+    step_m: float
+    max_offset_m: float
+    max_iterations: int
+
+
+class SegmentationSettings(TypedDict, total=False):   # overrides of config.SEGMENTATION
+    method: Literal["otsu"]
+    smooth_nm: float
+    min_diameter_nm: float
+    edge_px: int
 
 
 class RunSettings(TypedDict):
@@ -19,6 +32,8 @@ class RunSettings(TypedDict):
     detector: NotRequired[str]                 # scanning detector, default "haadf"
     max_particles: NotRequired[int]            # EDS cap, default LIMITS["max_particles"]
     beam_order: NotRequired[str]               # override TARGETS[target]["beam_order"]
+    tuning: NotRequired[dict[str, SearchSettings]]      # "z" / "C1" / "A1" -> overrides
+    segmentation: NotRequired[SegmentationSettings]
     run_tag: NotRequired[str]
 
 
@@ -44,6 +59,28 @@ class InstrumentSnapshot(TypedDict):
     problems: list[str]                        # failed readiness checks
     warnings: list[str]                        # unknown values, unreadable fields
     raw_path: str                              # JSON with everything read
+    c1_offset_m: NotRequired[float]            # corrector change applied in this run
+    a1_offset_m: NotRequired[list[float]]      #   (the corrector has no readback)
+
+
+class TuneResult(TypedDict):
+    name: str                                  # "z", "C1", "A1"
+    settings: dict                             # search settings used
+    best_offset_m: list[float]                 # from the start of the node
+    best_score: float
+    n_images: int
+    stop_reason: str                           # "converged", "max_iterations", "no_candidates"
+    best_image_key: str
+    history_path: str                          # tune_<name>.json: every point
+    figure_path: str                           # tune_<name>.png
+
+
+class Segmentation(TypedDict):
+    method: str
+    settings: dict
+    n_particles: int
+    labels_path: str                           # .npy label image
+    overlay_path: str                          # .png outlines + aim points
 
 
 class Overview(TypedDict):
@@ -76,7 +113,9 @@ class ParticleRunState(TypedDict):
     start: NotRequired[InstrumentSnapshot]
     current: NotRequired[InstrumentSnapshot]
     end: NotRequired[InstrumentSnapshot]
+    tuning: NotRequired[Annotated[dict[str, TuneResult], operator.or_]]   # merged per node
     overview: NotRequired[Overview]
+    segmentation: NotRequired[Segmentation]
     particles: NotRequired[list[Particle]]
     spectra: NotRequired[list[SpectrumRecord]]
     run_status: NotRequired[Literal["running", "ok", "no_particles", "failed"]]

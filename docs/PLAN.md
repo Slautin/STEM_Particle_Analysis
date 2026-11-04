@@ -163,9 +163,11 @@ For each block:
 Twin quirks found in block 1 (asyncroscopy bugs, worked around here):
 
 - The twin keeps particle positions on a 128 px map but checks the EDS beam in image pixels, so EDS only works when the image is 128 px too. `twin.py start` sets `scan.imsize = 128`.
-- Images fail at some FOVs (50, 100 and 200 nm at 512 px) because of a rounding mismatch in the twin's image size. Notebooks use FOVs that work (20, 40, 186 nm).
+- At 512 px, images fail at some FOVs (50, 100 and 200 nm) because of a rounding mismatch in the twin's image size. At the 128 px that `twin.py` sets, every FOV tried works (20–186 nm).
 - The twin's beam order is `row_col`: beam x follows image rows. The real microscope is assumed to be `col_row`, which is still to be checked.
 - Device `State` comes back over MCP as a number in text (`'0'` = ON).
+- The twin's corrector **subtracts** what it is sent: after `correct_aberration` totals of +x, its internal C1/A1 change by −x (measured in notebook 03). The real CEOS sign is still to be checked.
+- The twin keeps its state (stage, FOV, corrector values) between runs until it is restarted.
 
 In parallel: the asyncroscopy PR for scan and EDS settings commands.
 
@@ -174,6 +176,13 @@ Findings from block 2 (`notebooks/02_analysis.ipynb`, synthetic images):
 - **Metrics.** `contrast` and `edge_sharpness` fall steadily with blur, with or without noise, so they are safe to maximize. `entropy` **rises** with blur, so maximizing it defocuses. `high_frequency_power` falls near focus but rises again further out and with noise, because noise and the image's non-periodic edges keep a fixed high-frequency share. In the 1D search, `contrast` and `edge_sharpness` end about 0.2–0.3 step from the optimum; `entropy` and `high_frequency_power` end 10–19 steps away. Use `contrast` (the notebook default) or `edge_sharpness`.
 - **Search vs notebook.** `QuadraticSearch` matches the notebook code. Over 60 random peaks, the first model point is identical in 100 % (z, C1) and 93 % (A1) of cases; the rest are 1–2 grid steps away, at ties. Accuracy and the number of measurements are the same. The notebook's grids put candidates exactly on its r/40 and disk edges, so at a tie its choice depends on float rounding (units, start z). The new code follows exact arithmetic there.
 - **Segmentation.** Otsu with settings in nm finds 20 of 20 synthetic particles. On the twin, dim particles are missed: one global threshold does not catch particles much fainter than the others. SAM (optional extra) or a local threshold would help.
+
+Findings from block 3 (`tests/test_nodes_analysis.py`, `notebooks/03_nodes_analysis.ipynb`):
+
+- **The tune nodes find a hidden optimum** through the full path (MCP calls → Tiled image → metric → search) on a fake microscope whose image blurs: z +4.36 µm (truth +4.3), C1 24.9 nm (truth 23), A1 (2.8, −2.3) nm (truth 3, −2). They end at the best point.
+- **Restore works.** When an image fails in the middle of a search, z and the corrector go back exactly to where the node started. This is tested on the fake microscope and on the twin.
+- **Guards.** Preflight refuses `entropy` and `high_frequency_power` for tuning, a step larger than `max_offset`, a `max_offset` over half the per-move limit (z 50 µm, corrector 100 nm per call), and unknown setting names.
+- **Overview → segment → EDS on the twin:** 26 particles at a 40 nm FOV; EDS at the first 20 aim points gives 20 particle compositions.
 
 **Open decisions**
 
