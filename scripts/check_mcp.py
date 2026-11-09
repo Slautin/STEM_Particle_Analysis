@@ -20,10 +20,10 @@ def describe_args(tool) -> str:
     return ", ".join(f"{name}: {spec.get('type', '?')}" for name, spec in props.items())
 
 
-async def main(target: str, show_all: bool) -> int:
-    client = session.connect(target)
+async def main(instrument: str, show_all: bool) -> int:
+    client = session.connect(instrument)
     tools = await client.list_tools()
-    print(f"[check] {client.url} ({target}): {len(tools)} tools")
+    print(f"[check] {client.url} ({instrument}): {len(tools)} tools")
 
     needed = {short: session.tool_name(short) for short in TOOLS}
     for short, name in needed.items():
@@ -57,5 +57,5 @@ async def main(target: str, show_all: bool) -> int:
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
-    target = next((a for a in argv if not a.startswith("-")), "twin")
-    sys.exit(asyncio.run(main(target, "--all" in argv)))
+    instrument = next((a for a in argv if not a.startswith("-")), "twin")
+    sys.exit(asyncio.run(main(instrument, "--all" in argv)))

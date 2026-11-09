@@ -21,6 +21,9 @@ def tiled(monkeypatch):
         "eds_one": {"spectrum": Leaf([0.97], {"elements": [b"Au"]})},
         "eds_twin": {"spectrum": Leaf([0.6, 0.4], {"elements": np.array(["Au", "Pt"])})},
         "eds_json": {"spectrum": Leaf([0.6, 0.4], {"elements": '["Au", "Pt"]'})},
+        "sam": Leaf([[0, 1], [2, 2]], {"area_statistics": [{"id": 1, "area_px": 1}]}),
+        "sam_json": Leaf([[0, 1]], {"area_statistics": '[{"id": 1, "area_px": 1}]'}),
+        "sam_none": Leaf([[0, 0]]),
     }
     monkeypatch.setattr(tiled_io, "_client", catalog)
     return catalog
@@ -44,3 +47,11 @@ def test_read_spectrum_single_element_stays_1d(tiled):
 def test_read_spectrum_twin_elements(tiled, key):
     values, elements = tiled_io.read_spectrum(key)
     assert values.tolist() == [0.6, 0.4] and elements == ["Au", "Pt"]
+
+
+@pytest.mark.parametrize("key, areas", [("sam", [{"id": 1, "area_px": 1}]),
+                                        ("sam_json", [{"id": 1, "area_px": 1}]),
+                                        ("sam_none", [])])
+def test_read_labels(tiled, key, areas):
+    labels, found = tiled_io.read_labels(key)
+    assert labels.dtype.kind in "iu" and found == areas

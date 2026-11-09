@@ -1,18 +1,18 @@
 """Acquire one EDS spectrum at the centre of each particle. SIDE EFFECT: parks the beam.
 
-Reads:   particles, overview.shape, settings.max_particles / beam_order, run.target
+Reads:   particles, overview.shape, settings.instrument / max_particles / beam_order
 Writes:  spectra
 MCP:     place_beam, acquire_spectrum("eds")
-Checks:  beam position within 0..1; at most max_particles points
+Checks:  eds_settings (max_particles 1..LIMITS cap, beam_order); beam position within 0..1
 Saves:   spectra/particle_NNN.npy + eds.png in the run folder
-Beam order: pixel (row, col) -> place_beam [x, y], per target (config.TARGETS beam_order)
+Beam order: pixel (row, col) -> place_beam [x, y], per instrument (config.INSTRUMENTS beam_order)
 Source:  notebook cells 22, 24, 29
 """
 from pathlib import Path
 
 import numpy as np
 
-from stem_agent.config import LIMITS, TARGETS
+from stem_agent.config import INSTRUMENTS, LIMITS
 from stem_agent.data import tiled_io
 from stem_agent.mcp import session
 from stem_agent.utils import plots
@@ -29,15 +29,25 @@ def beam_position(row: float, col: float, shape: list[int], order: str) -> list[
     return xy
 
 
+def eds_settings(settings: dict) -> tuple[int, str]:
+    """-> (max_particles, beam_order), checked."""
+    limit = settings.get("max_particles", LIMITS["max_particles"])
+    if not 1 <= limit <= LIMITS["max_particles"]:
+        raise ValueError(f"max_particles must be 1..{LIMITS['max_particles']}")
+    order = settings.get("beam_order") or INSTRUMENTS[settings["instrument"]]["beam_order"]
+    if order not in ("col_row", "row_col"):
+        raise ValueError("beam_order must be 'col_row' or 'row_col'")
+    return limit, order
+
+
 @safe_node()
 async def eds_node(state: dict) -> dict:
     settings, run = state["settings"], state["run"]
+    limit, order = eds_settings(settings)
     particles = state.get("particles") or []
-    limit = settings.get("max_particles", LIMITS["max_particles"])
     if len(particles) > limit:
         print(f"[eds] {len(particles)} particles, measuring the first {limit}")
         particles = particles[:limit]
-    order = settings.get("beam_order") or TARGETS[run["target"]]["beam_order"]
     shape = state["overview"]["shape"]
 
     out_dir = Path(run["run_dir"]) / "spectra"

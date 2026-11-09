@@ -17,7 +17,7 @@ def result(*blocks, structured=None, error=False) -> CallToolResult:
     return CallToolResult(content=list(blocks), structuredContent=structured, isError=error)
 
 
-@pytest.mark.parametrize("target, short, expected", [
+@pytest.mark.parametrize("instrument, short, expected", [
     ("twin", "acquire_image", "DigitalTwinParticles_acquire_scanned_image"),
     ("real", "acquire_image", "AutoScriptMicroscope_acquire_scanned_image"),
     ("twin", "correct_aberration", "DigitalTwinCorrector_correct_aberration"),
@@ -25,8 +25,8 @@ def result(*blocks, structured=None, error=False) -> CallToolResult:
     ("twin", "get_tiled_config", "DATA_get_config"),
     ("real", "list_devices", "list_devices"),
 ])
-def test_tool_name(target, short, expected):
-    assert session.tool_name(short, target) == expected
+def test_tool_name(instrument, short, expected):
+    assert session.tool_name(short, instrument) == expected
 
 
 def test_tool_name_unknown():

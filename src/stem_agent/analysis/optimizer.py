@@ -17,6 +17,9 @@ Algorithm (same numbers as the notebook):
     radius x1.2 (cap 2*step and max_offset) if the score beats the previous best by > 0.1 %,
     else x0.65; stop when radius < min_step (default step/16), after max_iterations model
     points, or when no unmeasured candidate is left
+    a candidate must be > radius/40 from every measured point; when min_step is GIVEN, also
+    > min_step, so no move is smaller than what the stage / corrector can do (default: as the
+    notebook)
 
 Source: notebook cell 5 (fit_response, propose_next_z, hill_climb_stage_z) and
         cell 7 (fit_response_surface, propose_next_point, hill_climb_aberration), merged;
@@ -55,6 +58,7 @@ class QuadraticSearch:
         self.max_offset = float(max_offset)
         self.max_iterations = int(max_iterations)
         self.min_step = self.step / 16 if min_step is None else float(min_step)
+        self._min_gap = 0.0 if min_step is None else float(min_step)   # given: no smaller moves
         self.radius = self.step
         self.iterations = 0
         self.history: list[SearchPoint] = []
@@ -154,7 +158,7 @@ class QuadraticSearch:
             candidates = candidates[np.hypot(candidates[:, 0], candidates[:, 1])
                                     <= self.max_offset * (1 + EDGE)]
         separation = np.linalg.norm(candidates[:, None, :] - offsets[None, :, :], axis=2).min(axis=1)
-        candidates = candidates[separation > max(r / 40, 1e-15) * (1 + EDGE)]
+        candidates = candidates[separation > max(r / 40, self._min_gap, 1e-15) * (1 + EDGE)]
         if not len(candidates):
             return None
         return candidates[int(np.argmax(self.predict(candidates)))]

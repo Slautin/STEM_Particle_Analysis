@@ -1,6 +1,6 @@
-"""Move the stage to the target (x, y), keep z and tilt. SIDE EFFECT: moves the stage.
+"""Move the stage to settings.stage_xy_m, keep z and tilt. SIDE EFFECT: moves the stage.
 
-Reads:   settings.target_xy_m, current.stage
+Reads:   settings.stage_xy_m (None / missing: stay, no MCP call), current.stage
 Writes:  current
 MCP:     get_stage, move_stage (via common.move_stage)
 Checks:  step within LIMITS["max_xy_move_m"]; readback within LIMITS["stage_tolerance_m"]
@@ -18,7 +18,13 @@ async def undo_move(state: dict) -> None:
 
 @safe_node(undo=undo_move)
 async def move_stage_node(state: dict) -> dict:
-    x, y = state["settings"]["target_xy_m"]
+    xy = state["settings"].get("stage_xy_m")
+    if xy is None:
+        print("[move] no stage_xy_m: staying here")
+        return {}
+    if len(xy) != 2:
+        raise ValueError("stage_xy_m must be (x, y) or None")
+    x, y = xy
     before = state["current"]["stage"]
     reached = await common.move_stage(x=x, y=y)
     print(f"[move] ({before[0] * 1e6:+.4f}, {before[1] * 1e6:+.4f}) -> "

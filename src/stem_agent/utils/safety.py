@@ -3,7 +3,7 @@
     safe_node(undo=None) -> decorator
         on any exception: print it, run undo(state) with the state the node received,
         return {"run_status": "failed", "errors": ["<node>: <msg>"]}  (errors add up in the state)
-        the graph router then jumps to status_end -> save
+        the graph router then jumps to status_end -> save (status_end = status_node)
 """
 import functools
 from collections.abc import Awaitable, Callable

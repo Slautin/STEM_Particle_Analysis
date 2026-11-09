@@ -1,20 +1,27 @@
-"""Is the microscope ready? Read-only snapshot of the instrument.
+"""Snapshot of the instrument. Read-only. One node for any place in a graph.
 
-    make_status_node(check_ready) -> node
-        status_start_node  writes start, current; if not ready: run_status="failed" (nothing moves)
-        status_end_node    writes end; no checks; runs also after a failure
+    status_node    reads the instrument, appends the snapshot to `snapshots`, refreshes `current`
 
+Gate:    the FIRST snapshot of a run (snapshots empty, run_status "running") stops the run if
+         the instrument is not ready, before anything moves. Later snapshots only record.
+         preflight starts a run with snapshots = [], so a new run is always gated.
+Reads:   run (folder, instrument), snapshots, current, run_status
+Writes:  snapshots ([0] = start of the run, [-1] = latest); current (merged, so the corrector
+         offsets that only the tune nodes know are kept); gate only: run_status="failed" + errors
 MCP:     get_parameters, get_stage, get_fov, get_defocus, every <TangoClass>_State
 Checks:  config.READY_CHECKS on normalized fields, config.BAD_DEVICE_STATES;
-         unknown values stop the run only where TARGETS[target]["strict_ready"]
-Saves:   status_start.json / status_end.json in the run folder (everything read)
+         unknown values are problems only where INSTRUMENTS[instrument]["strict_ready"]
+Saves:   status_NN.json in the run folder (everything read)
+Graph:   one function, any node name:  graph.add_node("status_start", status_node)
+                                       graph.add_node("status_end", status_node)
 Never fixes anything itself (no unblanking, no valve opening).
 Source:  new
 """
 import json
+from datetime import datetime
 from pathlib import Path
 
-from stem_agent.config import BAD_DEVICE_STATES, READY_CHECKS, TARGETS
+from stem_agent.config import BAD_DEVICE_STATES, INSTRUMENTS, READY_CHECKS
 from stem_agent.mcp import session
 from stem_agent.nodes import common
 from stem_agent.utils.safety import safe_node
@@ -43,17 +50,18 @@ def normalize_parameters(params: dict) -> dict:
         stem = text("optical_mode").endswith("stem")
     blanked = params.get("beam_blanker")
     ht_on = params.get("is_accelerator_on")
+    print(text("column_valves"))
     return {
         "stem_mode":          None if stem is None else bool(stem),
         "beam_blanked":       None if blanked is None else bool(blanked),
-        "column_valves_open": None if text("column_valves") is None else text("column_valves").endswith("open"),
+        "column_valves_open": None if text("column_valves") is None else text("column_valves").endswith("opened"),
         "high_tension_on":    None if ht_on is None else bool(ht_on),
         "beam_stopper_out":   None if text("beam_stopper") is None else "retract" in text("beam_stopper"),
     }
 
 
 def assess(fields: dict, devices: dict[str, str], strict: bool) -> tuple[list[str], list[str]]:
-    """-> (problems, warnings). Problems stop the run at status_start."""
+    """-> (problems, warnings). At the gate, problems stop the run."""
     problems, warnings = [], []
     for field, wanted in READY_CHECKS.items():
         value = fields[field]
@@ -74,7 +82,9 @@ async def _read(warnings: list[str], label: str, coro):
         return None
 
 
-async def read_snapshot(run_dir: Path, name: str, strict: bool) -> dict:
+async def read_snapshot(run_dir: Path, index: int, strict: bool) -> dict:
+    """Read everything, save status_<index>.json, return the snapshot."""
+    time = datetime.now().isoformat(timespec="seconds")
     warnings: list[str] = []
     params = await _read(warnings, "parameters", session.call("get_parameters"))
     if isinstance(params, str):
@@ -92,43 +102,39 @@ async def read_snapshot(run_dir: Path, name: str, strict: bool) -> dict:
 
     fields = normalize_parameters(params)
     problems, unknown = assess(fields, devices, strict)
-    raw_path = run_dir / f"{name}.json"
-    raw_path.write_text(json.dumps({"parameters": params, "devices": devices, "stage": stage,
+    raw_path = run_dir / f"status_{index:02d}.json"
+    raw_path.write_text(json.dumps({"index": index, "time": time, "parameters": params,
+                                    "devices": devices, "stage": stage,
                                     "fov_m": fov, "defocus_m": defocus, "fields": fields,
                                     "problems": problems, "warnings": unknown + warnings},
                                    indent=2, default=str), encoding="utf-8")
-    return {"stage": stage, "fov_m": fov, "defocus_m": defocus, **fields, "devices": devices,
+    return {"index": index, "time": time,
+            "stage": stage, "fov_m": fov, "defocus_m": defocus, **fields, "devices": devices,
             "ready": not problems, "problems": problems, "warnings": unknown + warnings,
             "raw_path": str(raw_path)}
 
 
-def make_status_node(check_ready: bool):
-    name = "status_start" if check_ready else "status_end"
+@safe_node()
+async def status_node(state: dict) -> dict:
+    run = state["run"]
+    snapshots = state.get("snapshots") or []
+    gate = not snapshots and state.get("run_status") == "running"
+    snap = await read_snapshot(Path(run["run_dir"]), len(snapshots),
+                               INSTRUMENTS[run["instrument"]]["strict_ready"])
 
-    async def status_node(state: dict) -> dict:
-        run = state["run"]
-        strict = TARGETS[run["target"]]["strict_ready"]
-        snap = await read_snapshot(Path(run["run_dir"]), name, strict)
-        stage = ", ".join(f"{v:+.3g}" for v in snap["stage"])
-        bad = {k: v for k, v in snap["devices"].items() if v != "ON"}
-        print(f"[{name}] stage [{stage}] | FOV {snap['fov_m']} m | "
-              f"devices {len(snap['devices'])} ({bad or 'all ON'}) | ready {snap['ready']}")
-        for line in snap["problems"]:
-            print(f"[{name}] PROBLEM: {line}")
-        for line in snap["warnings"]:
-            print(f"[{name}] warning: {line}")
+    label = f"status {snap['index']:02d}{' gate' if gate else ''}"
+    stage = ", ".join(f"{v:+.3g}" for v in snap["stage"])
+    bad = {k: v for k, v in snap["devices"].items() if v != "ON"}
+    print(f"[{label}] stage [{stage}] | FOV {snap['fov_m']} m | "
+          f"devices {len(snap['devices'])} ({bad or 'all ON'}) | ready {snap['ready']}")
+    for line in snap["problems"]:
+        print(f"[{label}] PROBLEM: {line}")
+    for line in snap["warnings"]:
+        print(f"[{label}] warning: {line}")
 
-        if not check_ready:
-            return {"end": snap}
-        update = {"start": snap, "current": snap}
-        if not snap["ready"]:
-            update |= {"run_status": "failed",
-                       "errors": [f"{name}: not ready: {'; '.join(snap['problems'])}"]}
-        return update
-
-    status_node.__name__ = f"{name}_node"
-    return safe_node()(status_node)
-
-
-status_start_node = make_status_node(check_ready=True)
-status_end_node = make_status_node(check_ready=False)
+    update = {"snapshots": snapshots + [snap],
+              "current": {**(state.get("current") or {}), **snap}}
+    if gate and not snap["ready"]:
+        update |= {"run_status": "failed",
+                   "errors": [f"status: not ready: {'; '.join(snap['problems'])}"]}
+    return update

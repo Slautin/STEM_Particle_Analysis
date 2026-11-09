@@ -13,8 +13,8 @@ Effort: **1–2 weeks** for v1, plus **1–2 microscope sessions**.
 ## 2. Workflow
 
 ```
-preflight → status_start → move (x,y) → focus z → set FOV → tune C1 → tune A1
-          → overview → find particles → EDS per particle → status_end → save
+preflight → status_start → move (x,y) → tune ⟲ (one protocol step per pass: z, C1, A1, …)
+          → set FOV → overview → find particles → EDS per particle → status_end → save
 
 no particles            → status_end → save
 any failure (after undo) → status_end → save
@@ -45,17 +45,19 @@ STEM_Particle_Analysis/
 │   ├── analysis/
 │   │   ├── metrics.py         # contrast, edge_sharpness, entropy, high_frequency_power
 │   │   ├── optimizer.py       # QuadraticSearch: 1D/2D, ask/tell, hard bounds
-│   │   └── segmentation.py    # otsu (default), sam (optional)
+│   │   └── segmentation.py    # otsu; sam_particles: cleans the SAM2 device's labels
 │   ├── states/experiment_state.py
 │   ├── nodes/
 │   │   ├── common.py          # get_stage, move_stage, acquire_haadf (shared by several nodes)
 │   │   ├── preflight_node.py
-│   │   ├── status_node.py     # make_status_node(check_ready=True/False)
+│   │   ├── status_node.py     # status_node: one snapshot node, used at start and end
 │   │   ├── move_stage_node.py
-│   │   ├── tune_node.py       # make_tune_node("z" | "C1" | "A1", dims, apply)
+│   │   ├── tune_node.py       # tune_node: runs the next step of settings.protocol
+│   │   │                      #   step method: quadratic (default) or grid (analysis/grid_search.py)
 │   │   ├── set_fov_node.py
 │   │   ├── overview_node.py
-│   │   ├── segment_node.py
+│   │   ├── segment_node.py    # Otsu, local (not in the graph)
+│   │   ├── sam_segment_node.py   # the graph's segment step: SAM2 device on the overview
 │   │   ├── eds_node.py
 │   │   └── save_node.py
 │   ├── graphs/particle_graph.py   # nodes + router (next / save on failure / skip EDS)
@@ -76,19 +78,20 @@ Every node has the same shape: `async def x_node(state) -> dict`. It reads its i
 
 | Node | MCP calls | Writes | Undo on error | From notebook | On twin |
 |---|---|---|---|---|---|
-| preflight | list tools, `DATA_get_config` | `run` | – | cell 1 (partly) | ✅ |
-| status_start | `get_parameters`, `get_stage`, `get_fov`, `get_defocus`, `<Device>_State` | `start`, `current` | – | new | ✅ |
+| preflight (general: connect MCP + Tiled, check tools, run folder; node settings are checked by each node) | list tools, `DATA_get_config` | `run` | – | cell 1 (partly) | ✅ |
+| status (status_start) | `get_parameters`, `get_stage`, `get_fov`, `get_defocus`, `<Device>_State` | `snapshots` (+1), `current` | – | new | ✅ |
 | move | `move_stage`, `get_stage` | `current` | back to start x, y | new | ✅ |
-| focus z | `move_stage` + `acquire_scanned_image` (loop) | `tuning["z"]`, `current` | back to start z | cell 5 | ⚠️ mechanics only |
+| tune (step `tune: z`) | `move_stage` + `acquire_scanned_image` (loop) | `tuning[step]`, `current` | back to the step's start z | cell 5 | ⚠️ mechanics only |
 | set FOV | `set_fov`, `get_fov` | `current` | old FOV | cell 12 | ✅ |
-| tune C1 / A1 | `correct_aberration` + `acquire_scanned_image` (loop) | `tuning["C1"/"A1"]`, `current` | undo total offset | cell 7 (add limit + undo) | ⚠️ mechanics only, needs a corrector in the twin yaml |
+| tune (step `tune: C1` / `A1`) | `set_fov` (if `fov_m`), `correct_aberration` + `acquire_scanned_image` (loop) | `tuning[step]`, `current` | undo the step's total offset | cell 7 (add limit + undo) | ⚠️ mechanics only, needs a corrector in the twin yaml |
 | overview | `acquire_scanned_image` | `overview` | – | cells 9, 20 | ✅ |
-| find particles | none (local) | `segmentation`, `particles` | – | cell 21 (Otsu), 28 (SAM) | ✅ |
+| find particles (graph: SAM) | `SEGMENTATION_segment` on the overview key | `segmentation`, `particles` | – | cell 28 (SAM) | ✅ fake; check time on the microscope |
+| find particles (Otsu, node only) | none (local) | `segmentation`, `particles` | – | cell 21 | ✅ |
 | EDS | `place_beam`, `acquire_spectrum` | `spectra` | – | cells 22, 29 | ✅ (twin gives per-element values) |
-| status_end | same as status_start | `end` | – | new | ✅ |
+| status (status_end) | the same `status_node` | `snapshots` (+1), `current` | – | new | ✅ |
 | save | `blank_beam` (optional) | `run_status`, `summary.json` | – | new | ✅ |
 
-The status_start readiness check stops the run before anything moves unless: optical mode is STEM, column valves are open, high tension is on, the beam stopper is out, the beam is not blanked, and all devices are ON.
+One `status_node` takes every snapshot; it can sit anywhere in a graph. Only the first snapshot of a run is a gate (preflight starts a run with `snapshots = []`): it stops the run before anything moves unless: optical mode is STEM, column valves are open, high tension is on, the beam stopper is out, the beam is not blanked, and all devices are ON.
 
 ## 6. State
 
@@ -96,10 +99,9 @@ The status_start readiness check stops the run before anything moves unless: opt
 class ParticleRunState(TypedDict):
     settings: RunSettings                         # input, never changed
     run:      NotRequired[RunInfo]                # run_dir, tiled_uri, instrument_class, tool map
-    start:    NotRequired[InstrumentSnapshot]     # status_start, never changed
-    current:  NotRequired[InstrumentSnapshot]     # updated after each move/tune
-    end:      NotRequired[InstrumentSnapshot]     # status_end
-    tuning:   Annotated[dict[str, TuneResult], operator.or_]   # "z", "C1", "A1"
+    snapshots: NotRequired[list[InstrumentSnapshot]]  # every status_node call: [0] start, [-1] latest
+    current:  NotRequired[InstrumentSnapshot]     # latest snapshot + offsets tracked by the tune nodes
+    tuning:   Annotated[dict[str, TuneResult], operator.or_]   # protocol step name -> result (also the progress)
     overview: NotRequired[Overview]               # tiled_key, fov_m, shape
     segmentation: NotRequired[Segmentation]       # method, mask_path, overlay_path, n
     particles: NotRequired[list[Particle]]        # id, row, col, area_px, beam_xy
@@ -123,7 +125,7 @@ class ParticleRunState(TypedDict):
 
 1. **Scan and EDS settings are not reachable.** `imsize`, `dwell_time`, `scan_region` and EDS exposure are Tango attributes, and MCP publishes only commands. *Fix:* a small asyncroscopy PR that adds `set_settings` commands. Until then, the operator sets these by hand.
 2. **MCP returns only previews.** *Fix:* read full data from Tiled over HTTP.
-3. **MCP has a 30 s timeout per command.** SAM on the server would time out. *Fix:* run segmentation locally.
+3. **MCP has a 30 s timeout per command.** SAM runs on the SEGMENTATION device; a SAM call longer than 30 s fails. *Check:* its time on real overview images.
 
 **Check on the microscope:** beam x/y direction for `place_beam`, that the focus metric responds, corrector sign, a `NaN` alpha through the JSON round trip, and real timings.
 
@@ -133,7 +135,7 @@ class ParticleRunState(TypedDict):
 
 - Hard limits on z, C1 and A1.
 - Undo on error.
-- status_start blocks the run if the microscope is not ready.
+- The first status snapshot blocks the run if the microscope is not ready.
 - No automatic retries on commands that change the microscope. `correct_aberration` is relative, so a retry would apply the step twice.
 - Only read-only calls are retried, and only on network errors.
 
@@ -144,7 +146,7 @@ The work goes in blocks. Each block is tested on the digital twin with its own n
 For each block:
 
 1. Write the code in `src/stem_agent/`. Notebooks hold no logic, only calls and plots.
-2. Run the test notebook `notebooks/NN_<block>.ipynb` on the twin. Its first cell is `TARGET = "twin"`.
+2. Run the test notebook `notebooks/NN_<block>.ipynb` on the twin. Its first cell is `INSTRUMENT = "twin"`.
 3. Add pytest tests for the pure parts.
 4. Commit and review.
 
@@ -181,7 +183,7 @@ Findings from block 3 (`tests/test_nodes_analysis.py`, `notebooks/03_nodes_analy
 
 - **The tune nodes find a hidden optimum** through the full path (MCP calls → Tiled image → metric → search) on a fake microscope whose image blurs: z +4.36 µm (truth +4.3), C1 24.9 nm (truth 23), A1 (2.8, −2.3) nm (truth 3, −2). They end at the best point.
 - **Restore works.** When an image fails in the middle of a search, z and the corrector go back exactly to where the node started. This is tested on the fake microscope and on the twin.
-- **Guards.** Preflight refuses `entropy` and `high_frequency_power` for tuning, a step larger than `max_offset`, a `max_offset` over half the per-move limit (z 50 µm, corrector 100 nm per call), and unknown setting names.
+- **Guards.** The protocol check (`config.protocol_settings`, run before the graph and by the tune node) refuses `entropy` and `high_frequency_power` for tuning, a z `min_step_m` below the stage tolerance or a `min_step_m` above `step_m` (a step-specific minimum move: the search never asks for a point closer than it to a measured one, so a stage or corrector dead zone cannot stall it), a step larger than `max_offset`, a `max_offset` over half the per-move limit (z 50 µm, corrector 100 nm per call), and unknown setting names.
 - **Overview → segment → EDS on the twin:** 26 particles at a 40 nm FOV; EDS at the first 20 aim points gives 20 particle compositions.
 
 Findings from block 4 (`tests/test_graph_fake.py`, `notebooks/04_graph_twin.ipynb`, `notebooks/run_particle_analysis.ipynb`):
@@ -195,4 +197,4 @@ Findings from block 4 (`tests/test_graph_fake.py`, `notebooks/04_graph_twin.ipyn
 **Open decisions**
 
 1. Who opens the asyncroscopy PR for scan settings?
-2. Add SAM segmentation (the optional `sam` extra) now, or after the graph works?
+2. ~~Add SAM segmentation now, or after the graph works?~~ Done: the graph segments with the SAM2 device.

@@ -5,6 +5,8 @@
     read_spectrum(key) -> (values, elements | None)
                                                real: channel counts (4096); twin: one value per
                                                element, names in the dataset metadata
+    read_labels(key) -> (labels, areas)        SEGMENTATION device output: label image
+                                               (0 = background, 1..N) and its area_statistics
 
 Source: notebook cell 3 (read_haadf), cell 18 (spectrum read)
 """
@@ -65,3 +67,12 @@ def read_spectrum(key: str) -> tuple[np.ndarray, list[str] | None]:
     if isinstance(elements, str):                    # HDF5 attrs keep lists as JSON text
         elements = json.loads(elements) if elements.startswith("[") else [elements]
     return values, [e.decode() if isinstance(e, bytes) else str(e) for e in elements]
+
+
+def read_labels(key: str) -> tuple[np.ndarray, list[dict]]:
+    """Label image from the SEGMENTATION device; areas = its metadata["area_statistics"]."""
+    node = _tiled()[key]
+    areas = dict(getattr(node, "metadata", None) or {}).get("area_statistics") or []
+    if isinstance(areas, (str, bytes)):              # HDF5 attrs keep lists as JSON text
+        areas = json.loads(areas)
+    return np.asarray(node.read()), list(areas)

@@ -95,6 +95,18 @@ def test_finds_optimum_2d():
     assert np.hypot(*(search.best().offset - [1.0e-9, -0.6e-9])) < 2e-9 / 8
 
 
+@pytest.mark.parametrize("dims, step, min_step, score", [
+    (1, 200e-9, 50e-9, peak_1d(-0.6e-6, 1e-6)),
+    (2, 2e-9, 0.5e-9, peak_2d((1.0e-9, -0.6e-9), 3e-9)),
+])
+def test_min_step_keeps_every_point_apart(dims, step, min_step, score):
+    """A given min_step: no two measured points closer than it, so no move smaller than it."""
+    search = run(QuadraticSearch(dims, step, 20 * step, max_iterations=30, min_step=min_step), score)
+    points = np.array([point.offset for point in search.history])
+    gaps = np.linalg.norm(points[:, None, :] - points[None, :, :], axis=2)[np.triu_indices(len(points), 1)]
+    assert gaps.min() > min_step and search.stop_reason in ("converged", "no_candidates")
+
+
 @pytest.mark.parametrize("dims, center", [(1, 30e-6), (2, (30e-6, 5e-6))])
 def test_never_leaves_max_offset(dims, center):
     score = peak_1d(center, 5e-6) if dims == 1 else peak_2d(center, 5e-6)

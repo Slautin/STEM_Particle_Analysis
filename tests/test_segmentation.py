@@ -1,8 +1,11 @@
-"""Segmentation: counts and centres on synthetic particles, filters, aim point, nm settings."""
+"""Segmentation: counts and centres on synthetic particles, filters, aim point, nm settings;
+SAM label cleaning."""
 import numpy as np
 import pytest
 
-from stem_agent.analysis.segmentation import find_particles, otsu, pixel_size_m, segment
+from conftest import sam_cluster
+
+from stem_agent.analysis.segmentation import find_particles, otsu, pixel_size_m, sam_particles, segment
 from stem_agent.analysis.synthetic import blur, particle_image
 
 FOV = 50e-9          # 256 px -> ~0.2 nm per pixel
@@ -66,3 +69,32 @@ def test_empty_image():
 @pytest.mark.parametrize("shape, expected", [((128, 128), FOV / 128), ((64, 256), FOV / 256)])
 def test_pixel_size(shape, expected):
     assert pixel_size_m(FOV, shape) == pytest.approx(expected)
+
+
+# --- SAM labels ---
+
+def test_sam_drops_hidden_mask_and_merges_parts():
+    labels, particles = sam_particles(*sam_cluster(), pixel_m=1e-9)
+    assert np.unique(labels).tolist() == [0, 1, 2]
+    assert [p["area_px"] for p in particles] == [380, 380]          # part 4 back inside particle 3
+
+
+def test_sam_mostly_visible_mask_is_one_particle():
+    _, particles = sam_particles(*sam_cluster(), pixel_m=1e-9, min_visible=0.1)
+    assert len(particles) == 1                                       # 2 and 3 joined mask 1
+
+
+def test_sam_touching_particles_aim_at_their_own_middle():
+    labels = np.zeros((40, 60), dtype=np.uint32)
+    labels[10:30, 10:30], labels[10:30, 30:50] = 1, 2
+    out, particles = sam_particles(labels, [], pixel_m=1e-9)
+    assert len(particles) == 2
+    for p in particles:
+        assert out[round(p["row"]), round(p["col"])] == p["label"]
+        assert abs(p["col"] - 30) > 8                                # not on the shared border
+
+
+def test_sam_min_diameter_in_nm():
+    assert len(sam_particles(*sam_cluster(), pixel_m=1e-9, min_diameter_nm=20)[1]) == 2   # 380 px: 22 nm
+    assert sam_particles(*sam_cluster(), pixel_m=1e-9, min_diameter_nm=30)[1] == []
+    assert sam_particles(np.zeros((8, 8), dtype=np.uint32), [], pixel_m=1e-9)[1] == []

@@ -1,4 +1,6 @@
-"""Set the field of view used for tuning and the overview. SIDE EFFECT: changes FOV.
+"""Set the field of view (particle graph: for the overview). SIDE EFFECT: changes FOV.
+
+    set_fov(fov_m)       also used by tune_node for a step's fov_m
 
 Reads:   settings.tuning_fov_m, current.fov_m
 Writes:  current
@@ -8,16 +10,14 @@ Undo:    undo_fov: back to the FOV the node started from
 Note:    the particle twin rebuilds its sample when the FOV changes
 Source:  notebook cell 12
 """
-from stem_agent.config import LIMITS
+from stem_agent.config import LIMITS, check_fov
 from stem_agent.mcp import session
 from stem_agent.mcp.session import InstrumentError
 from stem_agent.utils.safety import safe_node
 
 
 async def set_fov(fov_m: float) -> float:
-    lo, hi = LIMITS["fov_range_m"]
-    if not lo <= fov_m <= hi:
-        raise ValueError(f"FOV {fov_m:.3g} m outside {lo:.0e}..{hi:.0e} m")
+    check_fov(fov_m)
     await session.call("set_fov", float(fov_m))
     got = float(await session.call("get_fov"))
     if abs(got - fov_m) > LIMITS["fov_rel_tolerance"] * fov_m:

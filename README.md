@@ -12,7 +12,7 @@ uv sync
 cp .env.example .env    # set ASYNCROSCOPY_DIR (and STEM_REAL_MCP_URL for the microscope)
 ```
 
-Optional SAM segmentation:
+Optional local SAM (not needed for the graph: it uses the SAM2 segmentation device through MCP):
 
 ```bash
 uv sync --extra sam
@@ -38,14 +38,23 @@ Open `notebooks/run_particle_analysis.ipynb`, edit the settings cell, run all. O
 
 ```python
 from stem_agent.graphs.particle_graph import run
-state = await run({"target": "twin", "target_xy_m": (5e-9, 0.0), "tuning_fov_m": 40e-9})
+state = await run({
+    "instrument": "twin",
+    "stage_xy_m": (5e-9, 0.0),
+    "tuning_fov_m": 40e-9,                     # overview FOV
+    "protocol": [                              # tuning steps, in order (required)
+        {"name": "z",  "tune": "z"},
+        {"name": "C1", "tune": "C1", "fov_m": 40e-9, "step_m": 5e-9},
+        {"name": "A1", "tune": "A1", "fov_m": 40e-9},
+    ],
+})
 ```
 
 Results: `runs/<time>_<tag>/` (`summary.json`, `summary.png`, tuning plots, spectra).
 
 ## On the real microscope
 
-`notebooks/05_real_microscope.ipynb` goes level by level: MCP and data → single nodes → instrument checks (metric response, corrector sign, beam x/y order) → tuning → segmentation and EDS → your own graph → full run. Safety switches (`ALLOW_STAGE`, `ALLOW_CORRECTOR`, `ALLOW_BEAM`) are off by default, so nothing moves until you switch it on. Dry-run it first with `TARGET = "twin"`.
+`notebooks/05_real_microscope.ipynb` goes level by level: MCP and data → single nodes → instrument checks (metric response, corrector sign, beam x/y order) → tuning → segmentation and EDS → your own graph → full run. Safety switches (`ALLOW_STAGE`, `ALLOW_CORRECTOR`, `ALLOW_BEAM`) are off by default, so nothing moves until you switch it on. Dry-run it first with `INSTRUMENT = "twin"`.
 
 ## Test
 
@@ -54,7 +63,7 @@ uv run python scripts/check_mcp.py      # tools + one HAADF on the twin
 uv run pytest
 ```
 
-Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, `03_nodes_analysis.ipynb`, `04_graph_twin.ipynb`, `05_real_microscope.ipynb` (kernel: `.venv`, first cell `TARGET = "twin"` or `"real"`).
+Block notebooks: `notebooks/00_connection.ipynb`, `01_nodes_instrument.ipynb`, `02_analysis.ipynb`, `03_nodes_analysis.ipynb`, `04_graph_twin.ipynb`, `05_real_microscope.ipynb` (kernel: `.venv`, first cell `INSTRUMENT = "twin"` or `"real"`).
 
 ## Status
 

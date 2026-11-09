@@ -6,21 +6,29 @@
         fill holes -> drop objects smaller than a disk of min_diameter_nm -> label
     find_particles(labels, edge_px=1, max_particles=None) -> list[Particle]
         drops particles touching the frame edge; largest first; ids 1..n
-        row, col = the beam aim point: the pixel deepest inside the particle (always inside,
-        also for odd shapes and touching particles); centroid = the centre of mass
+        row, col = the beam aim point: the pixel farthest from the particle's own border (always
+        inside, also for odd shapes and touching particles); centroid = the centre of mass
     segment(image, fov_m, ...) -> (labels, particles)
+    clean_sam_labels(labels, areas, min_visible) -> labels
+        SAM2 masks overlap and smaller ones paint over larger ones in its label image:
+        1) a mask with less than min_visible of its area still visible is dropped
+           (it mostly covered smaller masks: a cluster of particles, or the background)
+        2) a region inside exactly one other region (a part of a particle) joins it
+    sam_particles(labels, areas, pixel_m, min_visible, min_diameter_nm, edge_px) -> (labels, particles)
+        clean_sam_labels -> drop particles smaller than min_diameter_nm -> find_particles
 
 Notebook cell 21 used sigma 2 px and min_size 50 px; at its 186 nm / 512 px overview that is
 about smooth_nm=0.7 and min_diameter_nm=2.9. The defaults here are smaller, to keep the small
 particles of the digital twin (about 3 nm).
-Planned (optional extra "sam"): sam(image, checkpoint) from notebook cell 28.
 """
 import numpy as np
 from scipy import ndimage as ndi
 from skimage.filters import gaussian, threshold_otsu
+from skimage.segmentation import find_boundaries
 
 SMOOTH_NM = 0.3
 MIN_DIAMETER_NM = 1.0
+MIN_VISIBLE = 0.5
 
 
 def pixel_size_m(fov_m: float, shape) -> float:
@@ -49,7 +57,7 @@ def find_particles(labels: np.ndarray, edge_px: int = 1,
         return []
     index = np.arange(1, n + 1)
     mask = labels > 0
-    depth = ndi.distance_transform_edt(mask)
+    depth = ndi.distance_transform_edt(mask & ~find_boundaries(labels, mode="inner"))
     areas = ndi.sum(mask, labels, index)
     centroids = ndi.center_of_mass(mask, labels, index)
     aims = ndi.maximum_position(depth, labels, index)
@@ -77,3 +85,35 @@ def segment(image: np.ndarray, fov_m: float, smooth_nm: float = SMOOTH_NM,
             max_particles: int | None = None) -> tuple[np.ndarray, list[dict]]:
     labels = otsu(image, pixel_size_m(fov_m, image.shape), smooth_nm, min_diameter_nm)
     return labels, find_particles(labels, edge_px, max_particles)
+
+
+def clean_sam_labels(labels: np.ndarray, areas: list[dict],
+                     min_visible: float = MIN_VISIBLE) -> np.ndarray:
+    """One region per particle from SAM's label image (ids may have gaps afterwards)."""
+    labels = np.array(labels, dtype=np.int64)
+    for area in areas:                                    # 1) mostly hidden by smaller masks
+        own = labels == area["id"]
+        if own.sum() < min_visible * area["area_px"]:
+            labels[own] = 0
+    for k in np.unique(labels)[::-1]:                     # 2) inside one other region (small first)
+        if k == 0:
+            continue
+        ring = ndi.binary_dilation(labels == k) & (labels != k)
+        around = np.unique(labels[ring])
+        if len(around) == 1 and around[0] != 0:
+            labels[labels == k] = around[0]
+    return labels
+
+
+def sam_particles(labels: np.ndarray, areas: list[dict], pixel_m: float,
+                  min_visible: float = MIN_VISIBLE, min_diameter_nm: float = 0.0,
+                  edge_px: int = 1) -> tuple[np.ndarray, list[dict]]:
+    labels = clean_sam_labels(labels, areas, min_visible)
+    if min_diameter_nm > 0:
+        min_area_px = np.pi * (min_diameter_nm * 1e-9 / 2) ** 2 / pixel_m ** 2
+        labels[np.bincount(labels.ravel())[labels] < min_area_px] = 0
+    ids = np.unique(labels[labels > 0])                   # renumber 1..n: find_particles needs no gaps
+    lookup = np.zeros(int(labels.max()) + 1, dtype=np.int64)
+    lookup[ids] = np.arange(1, len(ids) + 1)
+    labels = lookup[labels]
+    return labels, find_particles(labels, edge_px)

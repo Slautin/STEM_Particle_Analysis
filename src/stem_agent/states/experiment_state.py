@@ -3,7 +3,7 @@
 Rules:
     no pixel arrays in state, only Tiled keys and file paths
     nodes return only the keys they change
-    start is never changed
+    settings is the input of the run: never changed by a node
 """
 import operator
 from typing import Annotated, Literal
@@ -11,11 +11,17 @@ from typing import Annotated, Literal
 from typing_extensions import NotRequired, TypedDict
 
 
-class SearchSettings(TypedDict, total=False):  # overrides of config.TUNING[name]
-    metric: str                                # config.SAFE_METRICS only
-    step_m: float
-    max_offset_m: float
-    max_iterations: int
+class TuneStep(TypedDict):                     # one step of settings.protocol
+    name: str                                  # record key and file names, unique
+    tune: Literal["z", "C1", "A1"]             # what the step changes
+    fov_m: NotRequired[float]                  # set before tuning; missing: keep the current FOV
+    metric: NotRequired[str]                   # missing keys: config.TUNING[tune]
+    step_m: NotRequired[float]
+    max_offset_m: NotRequired[float]
+    max_iterations: NotRequired[int]
+    min_step_m: NotRequired[float]             # smallest move worth making; default step_m / 16
+    method: NotRequired[Literal["quadratic", "grid"]]   # search; default "quadratic"
+    rounds: NotRequired[int]                   # grid only: zoom-in rounds, default 1
 
 
 class SegmentationSettings(TypedDict, total=False):   # overrides of config.SEGMENTATION
@@ -25,22 +31,29 @@ class SegmentationSettings(TypedDict, total=False):   # overrides of config.SEGM
     edge_px: int
 
 
+class SamSettings(TypedDict, total=False):            # overrides of config.SAM
+    min_visible: float
+    min_diameter_nm: float
+    edge_px: int
+
+
 class RunSettings(TypedDict):
-    target: Literal["twin", "real"]
-    target_xy_m: tuple[float, float]           # stage x, y for the move node
-    tuning_fov_m: float                        # FOV for tuning and the overview
+    instrument: Literal["twin", "real"]        # config.INSTRUMENTS key
+    stage_xy_m: NotRequired[tuple[float, float] | None]    # stage x, y for the move node; None: stay
+    tuning_fov_m: float                        # particle graph: FOV of the overview (set_fov node)
     detector: NotRequired[str]                 # scanning detector, default "haadf"
     max_particles: NotRequired[int]            # EDS cap, default LIMITS["max_particles"]
-    beam_order: NotRequired[str]               # override TARGETS[target]["beam_order"]
-    tuning: NotRequired[dict[str, SearchSettings]]      # "z" / "C1" / "A1" -> overrides
-    segmentation: NotRequired[SegmentationSettings]
+    beam_order: NotRequired[str]               # override INSTRUMENTS[instrument]["beam_order"]
+    protocol: NotRequired[list[TuneStep]]      # required by tune_node; no default
+    segmentation: NotRequired[SegmentationSettings]    # Otsu segment_node
+    sam: NotRequired[SamSettings]              # sam_segment_node (the particle graph)
     blank_beam_at_end: NotRequired[bool]      # save node blanks the beam; default off
     run_tag: NotRequired[str]
 
 
 class RunInfo(TypedDict):
     run_dir: str
-    target: str
+    instrument: str
     mcp_url: str | None                        # None if preflight failed before connecting
     tiled_uri: str | None
     tools: dict[str, str]                      # short name -> MCP tool name
@@ -48,10 +61,12 @@ class RunInfo(TypedDict):
 
 
 class InstrumentSnapshot(TypedDict):
+    index: int                                 # 0 = first snapshot of the run (the gate)
+    time: str                                  # ISO time
     stage: list[float]                         # [x, y, z, alpha, beta], m and deg
     fov_m: float | None
     defocus_m: float | None
-    stem_mode: bool | None                     # None = the target does not report it
+    stem_mode: bool | None                     # None = the instrument does not report it
     beam_blanked: bool | None
     column_valves_open: bool | None
     high_tension_on: bool | None
@@ -66,22 +81,27 @@ class InstrumentSnapshot(TypedDict):
 
 
 class TuneResult(TypedDict):
-    name: str                                  # "z", "C1", "A1"
-    settings: dict                             # search settings used
+    name: str                                  # the protocol step's name
+    tune: str                                  # "z", "C1", "A1"
+    fov_m: float | None                        # FOV during the step
+    run_dir: str                               # the run it belongs to (progress counts this run only)
+    settings: dict                             # the step as run: defaults merged
     best_offset_m: list[float]                 # from the start of the node
     best_score: float
     n_images: int
-    stop_reason: str                           # "converged", "max_iterations", "no_candidates"
+    stop_reason: str                           # quadratic: "converged", "max_iterations", "no_candidates";
+                                               # grid: "converged", "peak_at_edge", "no_peak"
     best_image_key: str
     history_path: str                          # tune_<name>.json: every point
     figure_path: str                           # tune_<name>.png
 
 
 class Segmentation(TypedDict):
-    method: str
+    method: str                                # "otsu" or "sam"
     settings: dict
     n_particles: int
     labels_path: str                           # .npy label image
+    labels_key: NotRequired[str]               # sam: SAM's raw label image in Tiled
     overlay_path: str                          # .png outlines + aim points
 
 
@@ -112,10 +132,9 @@ class SpectrumRecord(TypedDict):
 class ParticleRunState(TypedDict):
     settings: RunSettings
     run: NotRequired[RunInfo]
-    start: NotRequired[InstrumentSnapshot]
-    current: NotRequired[InstrumentSnapshot]
-    end: NotRequired[InstrumentSnapshot]
-    tuning: NotRequired[Annotated[dict[str, TuneResult], operator.or_]]   # merged per node
+    snapshots: NotRequired[list[InstrumentSnapshot]]   # every status_node call: [0] start, [-1] latest
+    current: NotRequired[InstrumentSnapshot]   # latest snapshot + offsets tracked by the tune nodes
+    tuning: NotRequired[Annotated[dict[str, TuneResult], operator.or_]]   # step name -> result
     overview: NotRequired[Overview]
     segmentation: NotRequired[Segmentation]
     particles: NotRequired[list[Particle]]

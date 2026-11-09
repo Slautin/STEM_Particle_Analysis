@@ -15,7 +15,9 @@ The plot_* functions return the Figure (shown by Jupyter) and save it when a pat
 from pathlib import Path
 
 import numpy as np
+from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
+from skimage.segmentation import find_boundaries
 
 
 def save_image(image: np.ndarray, path: str | Path, title: str = "",
@@ -31,6 +33,12 @@ def save_image(image: np.ndarray, path: str | Path, title: str = "",
     ax.axis("off")
     fig.savefig(path, dpi=100)
     return Path(path)
+
+
+def _outline(ax, labels: np.ndarray) -> None:
+    """One cyan outline per particle (touching particles stay apart)."""
+    edges = find_boundaries(labels, mode="inner")
+    ax.imshow(np.ma.masked_where(~edges, edges), cmap=ListedColormap(["cyan"]), interpolation="none")
 
 
 def _draw_spectra(ax, spectra: list[np.ndarray], labels: list[str],
@@ -71,7 +79,7 @@ def plot_summary(state: dict, image: np.ndarray | None, labels: np.ndarray | Non
     if image is not None:
         ax_img.imshow(image, cmap="gray", interpolation="none")
         if labels is not None and labels.shape == image.shape:
-            ax_img.contour(labels > 0, levels=[0.5], colors="cyan", linewidths=0.6)
+            _outline(ax_img, labels)
         for p in particles:
             ax_img.plot(p["col"], p["row"], "o", mfc="none", mec="tab:red", ms=6, mew=1.2)
             ax_img.text(p["col"] + 2, p["row"] - 2, str(p["id"]), color="tab:red", fontsize=7)
@@ -82,11 +90,11 @@ def plot_summary(state: dict, image: np.ndarray | None, labels: np.ndarray | Non
     ax_img.axis("off")
 
     run = state.get("run") or {}
-    lines = [f"status   {state.get('run_status')}",
-             f"target   {run.get('target')}",
-             f"run      {Path(run['run_dir']).name if run.get('run_dir') else '-'}", ""]
+    lines = [f"status     {state.get('run_status')}",
+             f"instrument {run.get('instrument')}",
+             f"run        {Path(run['run_dir']).name if run.get('run_dir') else '-'}", ""]
     for name, result in (state.get("tuning") or {}).items():
-        unit, unit_name = (1e-6, "um") if name == "z" else (1e-9, "nm")
+        unit, unit_name = (1e-6, "um") if result.get("tune", name) == "z" else (1e-9, "nm")
         best = ", ".join(f"{v / unit:+.3f}" for v in result["best_offset_m"])
         lines.append(f"tune {name:<3} best [{best}] {unit_name}  ({result['n_images']} images, "
                      f"{result['stop_reason']})")
@@ -116,6 +124,8 @@ def plot_graph(graph, path: str | Path | None = None) -> Figure:
     drawable = graph.get_graph()
     names = list(drawable.nodes)
     edges = [(e.source, e.target) for e in drawable.edges]
+    loops = {s for s, t in edges if s == t}             # a node that repeats (tune)
+    edges = [(s, t) for s, t in edges if s != t]
     incoming = {n: sum(1 for _, t in edges if t == n) for n in names}
     order, ready = [], [n for n in names if incoming[n] == 0]
     while ready:                                        # topological order, insertion order on ties
@@ -140,6 +150,11 @@ def plot_graph(graph, path: str | Path | None = None) -> Figure:
                         arrowprops={"arrowstyle": "-|>", "color": "tab:red", "ls": "--", "lw": 0.8,
                                     "shrinkA": 0, "shrinkB": 2,
                                     "connectionstyle": f"arc3,rad={-0.12 - 0.015 * (b - a)}"})
+    for node in loops:
+        ax.annotate("", xy=(-0.42, -row[node] + 0.12), xytext=(-0.42, -row[node] - 0.12),
+                    arrowprops={"arrowstyle": "-|>", "color": "tab:blue", "lw": 0.9,
+                                "connectionstyle": "arc3,rad=-1.6"})
+        ax.text(-0.6, -row[node], "repeat", color="tab:blue", fontsize=7, ha="right", va="center")
     for node in order:
         label = {"__start__": "START", "__end__": "END"}.get(node, node)
         terminal = node.startswith("__")
@@ -169,7 +184,8 @@ def plot_search(search, title: str = "", unit: float = 1e-9, unit_name: str = "n
         if len(scores) >= 3:
             margin = max(np.ptp(offsets) * 0.15, 1e-12)
             grid = np.linspace(offsets.min() - margin, offsets.max() + margin, 400)
-            ax_map.plot(grid, search.predict(grid * unit), color="tab:blue", label="quadratic fit")
+            ax_map.plot(grid, search.predict(grid * unit), color="tab:blue",
+                        label=getattr(search, "fit_name", "quadratic fit"))
         ax_map.scatter(offsets[:, 0], scores, c=np.arange(len(scores)), cmap="viridis", zorder=3)
         ax_map.plot(best.offset[0] / unit, best.score, "*", ms=16, color="tab:red", label="best")
         if truth is not None:
@@ -202,7 +218,7 @@ def plot_particles(image: np.ndarray, labels: np.ndarray, particles: list[dict],
     fig = Figure(figsize=(6, 6), layout="constrained")
     ax = fig.add_subplot()
     ax.imshow(image, cmap="gray", interpolation="none")
-    ax.contour(labels > 0, levels=[0.5], colors="cyan", linewidths=0.8)
+    _outline(ax, labels)
     for particle in particles:
         ax.plot(particle["col"], particle["row"], "o", mfc="none", mec="tab:red", ms=8, mew=1.5)
         ax.text(particle["col"] + 3, particle["row"] - 3, str(particle["id"]), color="tab:red",
