@@ -54,6 +54,7 @@ STEM_Particle_Analysis/
 │   │   ├── move_stage_node.py
 │   │   ├── tune_node.py       # tune_node: runs the next step of settings.protocol
 │   │   │                      #   step method: quadratic (default) or grid (analysis/grid_search.py)
+│   │   ├── auto_focus_node.py # OptiSTEM C1/A1 through MCP, after tune; opt-in (settings["auto_focus"])
 │   │   ├── set_fov_node.py
 │   │   ├── overview_node.py
 │   │   ├── segment_node.py    # Otsu, local (not in the graph)
@@ -84,6 +85,7 @@ Every node has the same shape: `async def x_node(state) -> dict`. It reads its i
 | tune (step `tune: z`) | `move_stage` + `acquire_scanned_image` (loop) | `tuning[step]`, `current` | back to the step's start z | cell 5 | ⚠️ mechanics only |
 | set FOV | `set_fov`, `get_fov` | `current` | old FOV | cell 12 | ✅ |
 | tune (step `tune: C1` / `A1`) | `set_fov` (if `fov_m`), `correct_aberration` + `acquire_scanned_image` (loop) | `tuning[step]`, `current` | undo the step's total offset | cell 7 (add limit + undo) | ⚠️ mechanics only, needs a corrector in the twin yaml |
+| auto_focus (opt-in) | `get_defocus`, `auto_focus` (OptiSTEM C1A1), `set_defocus` | `tuning["auto_focus"]`, `current` | defocus back if worse or on error (A1 cannot be undone) | asyncroscopy `AutoScriptMicroscope.auto_focus` | ✅ fake; check OptiSTEM time and the timeout text on the microscope |
 | overview | `acquire_scanned_image` | `overview` | – | cells 9, 20 | ✅ |
 | find particles (graph: SAM) | `SEGMENTATION_segment` on the overview key | `segmentation`, `particles` | – | cell 28 (SAM) | ✅ fake; check time on the microscope |
 | find particles (Otsu, node only) | none (local) | `segmentation`, `particles` | – | cell 21 | ✅ |

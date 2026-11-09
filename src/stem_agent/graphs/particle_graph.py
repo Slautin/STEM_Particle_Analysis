@@ -1,12 +1,13 @@
 """Particle-analysis graph.
 
-    preflight -> status_start -> move -> tune (loops over settings.protocol) -> set_fov
+    preflight -> status_start -> move -> tune (loops over settings.protocol) -> auto_focus -> set_fov
               -> overview -> segment -> eds -> status_end -> save -> END
 
     after every node: the next one, or status_end when run_status is "failed" / "no_particles"
     status_end and save always run, so every run leaves a record
     status_start and status_end are the same status_node; only the first snapshot gates
     segment = sam_segment_node (SAM2 device on the overview image; settings["sam"])
+    auto_focus runs OptiSTEM only when settings has "auto_focus"; otherwise it is skipped
 
     build_graph() -> compiled LangGraph graph
     check_settings(settings)                         every node's settings; ValueError if bad
@@ -15,7 +16,8 @@
 """
 from langgraph.graph import END, START, StateGraph
 
-from stem_agent.config import check_fov, protocol_settings, sam_settings
+from stem_agent.config import auto_focus_settings, check_fov, protocol_settings, sam_settings
+from stem_agent.nodes.auto_focus_node import auto_focus_node
 from stem_agent.nodes.eds_node import eds_node, eds_settings
 from stem_agent.nodes.move_stage_node import move_stage_node
 from stem_agent.nodes.overview_node import overview_node
@@ -32,6 +34,7 @@ STEPS = [
     ("status_start", status_node),
     ("move", move_stage_node),
     ("tune", tune_node),                       # repeats until every protocol step is done
+    ("auto_focus", auto_focus_node),           # opt-in: skipped unless settings has "auto_focus"
     ("set_fov", set_fov_node),                 # the overview FOV, after tuning
     ("overview", overview_node),
     ("segment", sam_segment_node),             # SAM2 on the overview image
@@ -83,6 +86,7 @@ def check_settings(settings: dict) -> None:
         raise ValueError("stage_xy_m must be (x, y) or None")
     check_fov(settings["tuning_fov_m"])
     protocol_settings(settings)
+    auto_focus_settings(settings)
     if "segmentation" in settings:
         raise ValueError("the graph segments with SAM: use settings['sam'] "
                          "(min_visible, min_diameter_nm, edge_px), not 'segmentation'")

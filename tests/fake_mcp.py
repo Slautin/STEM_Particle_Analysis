@@ -11,6 +11,10 @@
         stage_dead_zone_m: an axis change smaller than this is ignored (the stage does not move)
         corrector_dead_zone_m: a correct_aberration value smaller than this is ignored
         image: what Tiled returns for an acquisition, unless enable_blur() was called
+        defocus: get_defocus / set_defocus value (m)
+        auto_focus_effect: (defocus_m, image or None) that auto_focus leaves; None = no change
+        auto_focus_mode: "ok"; "timeout" = Tango timeout, then busy_polls get/set_defocus calls
+            fail as busy; "missing" = NotImplementedError (the particle twin)
         sam_labels: (labels, areas) the SEGMENTATION device returns; None = Otsu labels of the
             current image (one mask per particle, no overlaps)
         enable_blur(z_m, c1_m, a1_m): synthetic particle image blurred by the distance of
@@ -57,6 +61,11 @@ class FakeMicroscope:
         self.spectrum = (np.arange(8, dtype=float), None)
         self.sharp = None
         self.sam_labels = None
+        self.defocus = 0.0
+        self.auto_focus_effect = None
+        self.auto_focus_mode = "ok"
+        self.busy_polls = 0
+        self._busy = 0
         self.segmented = None
         self._tools = self._build_tools()
 
@@ -70,7 +79,9 @@ class FakeMicroscope:
             name("move_stage"):         ("position", self._move),
             name("get_fov"):            (None, lambda: self.fov),
             name("set_fov"):            ("fov", self._set_fov),
-            name("get_defocus"):        (None, lambda: 0.0),
+            name("get_defocus"):        (None, self._get_defocus),
+            name("set_defocus"):        ("defocus", self._set_defocus),
+            name("auto_focus"):         (None, self._auto_focus),
             name("get_parameters"):     (None, lambda: json.dumps(self.params)),
             name("acquire_image"):      ("detector_list", self._acquire),
             name("acquire_spectrum"):   ("detector_name", lambda detector: "spectrum-key"),
@@ -107,6 +118,32 @@ class FakeMicroscope:
             raise RuntimeError("simulated acquisition failure")
         self.images_taken += 1
         return f"image-{self.images_taken}"
+
+    def _check_busy(self):
+        if self._busy > 0:
+            self._busy -= 1
+            raise RuntimeError("API_CommandTimedOut: Not able to acquire serialization "
+                               "(dev, class or process) monitor")
+
+    def _get_defocus(self):
+        self._check_busy()
+        return self.defocus
+
+    def _set_defocus(self, defocus):
+        self._check_busy()
+        self.defocus = float(defocus)
+
+    def _auto_focus(self):
+        if self.auto_focus_mode == "missing":
+            raise NotImplementedError("DigitalTwinParticles does not implement _auto_focus")
+        if self.auto_focus_effect is not None:
+            self.defocus, image = self.auto_focus_effect
+            if image is not None:
+                self.image = image
+        if self.auto_focus_mode == "timeout":
+            self._busy = self.busy_polls
+            raise RuntimeError("API_DeviceTimedOut: Timeout (30000 mS) exceeded on device "
+                               "asyncroscopy/instrument/default, command auto_focus")
 
     def _segment(self, data_key):
         if self.sam_labels is None:

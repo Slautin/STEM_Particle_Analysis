@@ -7,10 +7,12 @@
     TUNING, SAFE_METRICS      search defaults per actuator (z / C1 / A1); metrics allowed for tuning
     SEGMENTATION              Otsu segmentation defaults (nm)
     SAM                       SAM2 particle defaults (sam_segment_node)
+    AUTO_FOCUS                OptiSTEM C1/A1 autofocus defaults (auto_focus_node)
     protocol_settings(settings)   settings["protocol"] (required): every step merged with
                               TUNING[step["tune"]] and checked
     segmentation_settings(settings)   defaults merged with the run's overrides, and checked
     sam_settings(settings)    SAM with settings["sam"] merged, and checked
+    auto_focus_settings(settings)  AUTO_FOCUS with settings["auto_focus"] merged, and checked
     check_fov(fov_m)          FOV within LIMITS["fov_range_m"]
     RUNS_ROOT, new_run(tag)   run folder: runs/<timestamp>_<tag>/
 
@@ -67,6 +69,8 @@ TOOLS = {
     "correct_aberration": ("corrector", "correct_aberration"),
     "corrector_info":     ("corrector", "get_info"),
     "segment":            ("SEGMENTATION", "segment"),   # SAM2: image key -> label-image key
+    "set_defocus":        ("microscope", "set_defocus"),  # only to restore after a bad autofocus
+    "auto_focus":         ("microscope", "auto_focus"),   # AutoScript: OptiSTEM, method "C1A1"
 }
 
 # client-side limit for one MCP request; the server's Tango timeout is 30 s
@@ -109,6 +113,13 @@ SEGMENTATION = {"method": "otsu", "smooth_nm": 0.3, "min_diameter_nm": 1.0, "edg
 # over larger ones) to count; min_diameter_nm: drop smaller particles (0 = keep all);
 # edge_px: drop particles touching the frame edge
 SAM = {"min_visible": 0.5, "min_diameter_nm": 0.0, "edge_px": 1}
+
+# OptiSTEM C1/A1 autofocus (auto_focus_node); the node runs only when settings has "auto_focus".
+# fov_m: set before (None = keep); metric: before/after check (larger = better);
+# worse_tolerance: after < before x (1 - this) counts as worse -> defocus restored
+#   (contrast noise is ~3 %, so 10 % means "clearly worse");
+# max_wait_s: total time allowed for OptiSTEM, the 30 s MCP timeout included
+AUTO_FOCUS = {"fov_m": None, "metric": "contrast", "worse_tolerance": 0.1, "max_wait_s": 300.0}
 
 
 def check_fov(fov_m: float) -> None:
@@ -203,6 +214,22 @@ def sam_settings(settings: dict) -> dict:
     cfg = {**SAM, **override}
     if not 0 < cfg["min_visible"] <= 1 or cfg["min_diameter_nm"] < 0 or cfg["edge_px"] < 0:
         raise ValueError(f"bad sam settings: {cfg}")
+    return cfg
+
+
+def auto_focus_settings(settings: dict) -> dict:
+    """AUTO_FOCUS with settings["auto_focus"] merged, checked. ValueError on a typo or a bad value."""
+    override = settings.get("auto_focus") or {}
+    unknown = set(override) - set(AUTO_FOCUS)
+    if unknown:
+        raise ValueError(f"unknown auto_focus settings: {sorted(unknown)}")
+    cfg = {**AUTO_FOCUS, **override}
+    if cfg["metric"] not in SAFE_METRICS:
+        raise ValueError(f"auto_focus metric must be one of {SAFE_METRICS}")
+    if not 0 <= cfg["worse_tolerance"] < 1 or cfg["max_wait_s"] <= 0:
+        raise ValueError(f"bad auto_focus settings: {cfg}")
+    if cfg["fov_m"] is not None:
+        check_fov(cfg["fov_m"])
     return cfg
 
 # status gate (first snapshot of a run): normalized field -> required value

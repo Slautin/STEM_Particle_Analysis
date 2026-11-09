@@ -37,6 +37,13 @@ class SamSettings(TypedDict, total=False):            # overrides of config.SAM
     edge_px: int
 
 
+class AutoFocusSettings(TypedDict, total=False):      # overrides of config.AUTO_FOCUS
+    fov_m: float | None
+    metric: str
+    worse_tolerance: float
+    max_wait_s: float
+
+
 class RunSettings(TypedDict):
     instrument: Literal["twin", "real"]        # config.INSTRUMENTS key
     stage_xy_m: NotRequired[tuple[float, float] | None]    # stage x, y for the move node; None: stay
@@ -47,6 +54,7 @@ class RunSettings(TypedDict):
     protocol: NotRequired[list[TuneStep]]      # required by tune_node; no default
     segmentation: NotRequired[SegmentationSettings]    # Otsu segment_node
     sam: NotRequired[SamSettings]              # sam_segment_node (the particle graph)
+    auto_focus: NotRequired[AutoFocusSettings]   # auto_focus_node runs only when present
     blank_beam_at_end: NotRequired[bool]      # save node blanks the beam; default off
     run_tag: NotRequired[str]
 
@@ -82,7 +90,7 @@ class InstrumentSnapshot(TypedDict):
 
 class TuneResult(TypedDict):
     name: str                                  # the protocol step's name
-    tune: str                                  # "z", "C1", "A1"
+    tune: str                                  # "z", "C1", "A1"; "auto_focus" (auto_focus_node)
     fov_m: float | None                        # FOV during the step
     run_dir: str                               # the run it belongs to (progress counts this run only)
     settings: dict                             # the step as run: defaults merged

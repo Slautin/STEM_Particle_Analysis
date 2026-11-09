@@ -10,8 +10,8 @@ from stem_agent.config import LIMITS
 from stem_agent.graphs.particle_graph import build_graph, check_settings, run
 from stem_agent.utils.plots import plot_graph
 
-NODES = ["preflight", "status_start", "move", "tune", "set_fov", "overview", "segment", "eds",
-         "status_end", "save"]
+NODES = ["preflight", "status_start", "move", "tune", "auto_focus", "set_fov", "overview", "segment",
+         "eds", "status_end", "save"]
 
 
 def quick(instrument="twin", **extra) -> dict:
@@ -29,7 +29,7 @@ def test_graph_structure():
     drawable = build_graph().get_graph()
     assert [n for n in drawable.nodes if not n.startswith("__")] == NODES
     jumps = {e.source for e in drawable.edges if e.target == "status_end" and e.conditional}
-    assert jumps == set(NODES[:7])                     # every step up to segment can jump
+    assert jumps == set(NODES[:8])                     # every step up to segment can jump
     assert ("tune", "tune") in {(e.source, e.target) for e in drawable.edges}   # the protocol loop
 
 
@@ -59,6 +59,23 @@ async def test_normal_run(fake):
     assert (Path(state["run"]["run_dir"]) / "summary.png").exists()
     saved = summary(state)
     assert saved["run_status"] == "ok" and saved["tuning"]["A1"]["n_images"] > 0
+
+
+async def test_auto_focus_runs_after_the_protocol(fake):
+    fake.enable_blur()
+    state = await run(quick(auto_focus={}), verbose=False)
+    assert state["run_status"] == "ok" and state["tuning"]["auto_focus"]["stop_reason"] == "done"
+    names = [name for name, _ in fake.calls]
+    last_correction = max(i for i, n in enumerate(names) if n.endswith("_correct_aberration"))
+    assert names.index("DigitalTwinParticles_auto_focus") > last_correction
+    assert summary(state)["tuning"]["auto_focus"]["n_images"] == 2
+
+
+async def test_auto_focus_skipped_without_settings(fake):
+    fake.enable_blur()
+    state = await run(quick(), verbose=False)
+    assert state["run_status"] == "ok" and "auto_focus" not in state["tuning"]
+    assert not fake.called("auto_focus")
 
 
 async def test_no_particles_skips_eds(fake):
@@ -101,6 +118,7 @@ async def test_not_ready_moves_nothing(fake_real):
     ({"segmentation": {"min_diameter_nm": 2.0}}, "segments with SAM"),
     ({"sam": {"min_visible": 0}}, "bad sam settings"),
     ({"sam": {"min_area": 5}}, "unknown sam settings"),
+    ({"auto_focus": {"metric": "entropy"}}, "auto_focus metric"),
     ({"max_particles": 0}, "max_particles"),
     ({"stage_xy_m": (1.0,)}, "stage_xy_m"),
 ])
