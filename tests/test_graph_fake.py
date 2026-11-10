@@ -118,6 +118,7 @@ async def test_not_ready_moves_nothing(fake_real):
     ({"segmentation": {"min_diameter_nm": 2.0}}, "segments with SAM"),
     ({"sam": {"min_visible": 0}}, "bad sam settings"),
     ({"sam": {"min_area": 5}}, "unknown sam settings"),
+    ({"sam": {"min_bright": 1.5}}, "bad sam settings"),
     ({"sam": {"min_diameter_nm": 5.0, "max_diameter_nm": 5.0}}, "max_diameter_nm must be > min"),
     ({"auto_focus": {"metric": "entropy"}}, "auto_focus metric"),
     ({"max_particles": 0}, "max_particles"),

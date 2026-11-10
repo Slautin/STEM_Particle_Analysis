@@ -348,6 +348,15 @@ async def test_sam_segment_settings_in_nm(fake):
     assert update["segmentation"]["n_particles"] == 2
 
 
+async def test_sam_segment_min_bright(fake):
+    fake.image = np.zeros((40, 60))
+    fake.image[10:30, 10:29] = 1.0                                   # sam_cluster particle 2 bright, 3 dark
+    fake.sam_labels = sam_cluster()
+    update = await sam_segment_node(await with_overview(sam={"min_bright": 0.5}))
+    assert update["segmentation"]["n_particles"] == 1
+    assert update["segmentation"]["settings"]["min_bright"] == 0.5
+
+
 async def test_sam_device_error_fails_the_node(fake):
     fake.image = np.zeros((32, 32))
     fake.fail[session.tool_name("segment", "twin")] = "SAM2 model is not initialized"

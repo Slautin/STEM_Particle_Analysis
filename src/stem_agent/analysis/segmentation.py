@@ -14,9 +14,10 @@
         1) a mask with less than min_visible of its area still visible is dropped
            (it mostly covered smaller masks: a cluster of particles, or the background)
         2) a region inside exactly one other region (a part of a particle) joins it
-    sam_particles(labels, areas, pixel_m, min_visible, min_diameter_nm, max_diameter_nm, edge_px)
-        -> (labels, particles)
-        clean_sam_labels -> drop particles outside min..max_diameter_nm -> find_particles
+    sam_particles(labels, areas, pixel_m, min_visible, min_diameter_nm, max_diameter_nm, edge_px,
+                  min_bright, image) -> (labels, particles)
+        clean_sam_labels -> drop dark regions (min_bright: share of pixels above the image's Otsu
+        level, as otsu() smooths it) -> drop particles outside min..max_diameter_nm -> find_particles
 
 Notebook cell 21 used sigma 2 px and min_size 50 px; at its 186 nm / 512 px overview that is
 about smooth_nm=0.7 and min_diameter_nm=2.9. The defaults here are smaller, to keep the small
@@ -58,7 +59,8 @@ def find_particles(labels: np.ndarray, edge_px: int = 1,
         return []
     index = np.arange(1, n + 1)
     mask = labels > 0
-    depth = ndi.distance_transform_edt(mask & ~find_boundaries(labels, mode="inner"))
+    inside = np.pad(mask & ~find_boundaries(labels, mode="inner"), 1)   # the frame is a border too
+    depth = ndi.distance_transform_edt(inside)[1:-1, 1:-1]
     areas = ndi.sum(mask, labels, index)
     centroids = ndi.center_of_mass(mask, labels, index)
     aims = ndi.maximum_position(depth, labels, index)
@@ -108,9 +110,17 @@ def clean_sam_labels(labels: np.ndarray, areas: list[dict],
 
 def sam_particles(labels: np.ndarray, areas: list[dict], pixel_m: float,
                   min_visible: float = MIN_VISIBLE, min_diameter_nm: float = 0.0,
-                  max_diameter_nm: float | None = None,
-                  edge_px: int = 1) -> tuple[np.ndarray, list[dict]]:
+                  max_diameter_nm: float | None = None, edge_px: int = 1,
+                  min_bright: float = 0.0, image: np.ndarray | None = None) -> tuple[np.ndarray, list[dict]]:
     labels = clean_sam_labels(labels, areas, min_visible)
+    if min_bright > 0:                                    # dark regions: gaps, support film, holes
+        if image is None or image.shape != labels.shape:
+            raise ValueError("sam min_bright needs the image the labels belong to")
+        smooth = gaussian(np.asarray(image, dtype=np.float64), sigma=SMOOTH_NM * 1e-9 / pixel_m)
+        lit = (smooth > threshold_otsu(smooth)).ravel()
+        n = int(labels.max()) + 1
+        share = np.bincount(labels.ravel(), lit, n) / np.maximum(np.bincount(labels.ravel(), minlength=n), 1)
+        labels[share[labels] < min_bright] = 0
     size = np.bincount(labels.ravel())[labels]            # every pixel: the area of its region, px
     disk_px = np.pi * (1e-9 / 2) ** 2 / pixel_m ** 2      # area of a 1 nm diameter disk, px
     if min_diameter_nm > 0:

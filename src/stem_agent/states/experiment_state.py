@@ -36,6 +36,7 @@ class SamSettings(TypedDict, total=False):            # overrides of config.SAM
     min_diameter_nm: float
     max_diameter_nm: float | None
     edge_px: int
+    min_bright: float                          # 0..1, 0 = off
 
 
 class AutoFocusSettings(TypedDict, total=False):      # overrides of config.AUTO_FOCUS

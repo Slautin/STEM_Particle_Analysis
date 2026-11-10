@@ -113,7 +113,11 @@ SEGMENTATION = {"method": "otsu", "smooth_nm": 0.3, "min_diameter_nm": 1.0, "edg
 # over larger ones) to count; min_diameter_nm / max_diameter_nm: drop smaller / larger particles
 # (equivalent-disk diameter; 0 / None = no limit; the cap keeps support film, holes and big clusters
 # out of EDS, which measures the largest particles first); edge_px: drop particles touching the edge
-SAM = {"min_visible": 0.5, "min_diameter_nm": 0.0, "max_diameter_nm": None, "edge_px": 1}
+# (0 = keep them: the aim point is inside anyway); min_bright: share of a particle's pixels that must
+# be brighter than the image's Otsu level (HAADF: particles are bright), so dark gaps and support
+# film drop out; 0 = off
+SAM = {"min_visible": 0.5, "min_diameter_nm": 0.0, "max_diameter_nm": None, "edge_px": 1,
+       "min_bright": 0.0}
 
 # OptiSTEM C1/A1 autofocus (auto_focus_node); the node runs only when settings has "auto_focus".
 # fov_m: set before (None = keep); metric: before/after check (larger = better);
@@ -213,7 +217,8 @@ def sam_settings(settings: dict) -> dict:
     if unknown:
         raise ValueError(f"unknown sam settings: {sorted(unknown)}")
     cfg = {**SAM, **override}
-    if not 0 < cfg["min_visible"] <= 1 or cfg["min_diameter_nm"] < 0 or cfg["edge_px"] < 0:
+    if not 0 < cfg["min_visible"] <= 1 or cfg["min_diameter_nm"] < 0 or cfg["edge_px"] < 0 \
+            or not 0 <= cfg["min_bright"] <= 1:
         raise ValueError(f"bad sam settings: {cfg}")
     if cfg["max_diameter_nm"] is not None and not cfg["max_diameter_nm"] > cfg["min_diameter_nm"]:
         raise ValueError(f"sam max_diameter_nm must be > min_diameter_nm: {cfg}")

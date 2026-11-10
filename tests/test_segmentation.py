@@ -107,3 +107,22 @@ def test_sam_max_diameter_drops_big_regions():
     assert sam_particles(big, [], pixel_m=1e-9, edge_px=0, max_diameter_nm=40)[1] == []
     _, kept = sam_particles(*sam_cluster(), pixel_m=1e-9, min_diameter_nm=20, max_diameter_nm=40)
     assert [p["area_px"] for p in kept] == [380, 380]               # 22 nm: inside the window
+
+
+def test_aim_point_of_an_edge_particle_is_off_the_frame():
+    labels = np.zeros((40, 60), dtype=np.uint32)
+    labels[10:30, 0:20] = 1                                          # cut by the left edge
+    [particle] = find_particles(labels, edge_px=0)
+    assert 8 <= particle["col"] <= 11                                # middle of what is visible
+
+
+def test_sam_min_bright_drops_dark_regions():
+    labels = np.zeros((40, 60), dtype=np.uint32)
+    labels[10:30, 5:25], labels[10:30, 35:55] = 1, 2                 # a particle, a gap
+    image = np.ones((40, 60))
+    image[10:30, 5:25] = 10.0                                        # only region 1 is bright
+    assert len(sam_particles(labels, [], pixel_m=1e-9)[1]) == 2
+    out, particles = sam_particles(labels, [], pixel_m=1e-9, min_bright=0.5, image=image)
+    assert len(particles) == 1 and out[20, 15] == 1 and out[20, 45] == 0
+    with pytest.raises(ValueError, match="needs the image"):
+        sam_particles(labels, [], pixel_m=1e-9, min_bright=0.5)

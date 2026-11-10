@@ -1,6 +1,7 @@
 """Find particles in the overview with the SAM2 segmentation device.
 
-Reads:   overview (Tiled key, shape, FOV), settings.sam (config.sam_settings), detector
+Reads:   overview (Tiled key, shape, FOV; the image too: min_bright and the overlay),
+         settings.sam (config.sam_settings), detector
 Writes:  segmentation, particles (largest first, beam aim points inside each particle);
          run_status="no_particles" if none (the graph then skips EDS)
 MCP:     SEGMENTATION segment: overview key -> label-image key. No new scan, so the particles
@@ -31,13 +32,14 @@ async def sam_segment_node(state: dict) -> dict:
     raw, areas = tiled_io.read_labels(labels_key)
     if list(raw.shape) != list(overview["shape"]):
         raise ValueError(f"SAM labels {raw.shape} do not match the overview {overview['shape']}")
-    labels, particles = sam_particles(raw, areas, pixel_size_m(fov, raw.shape), **cfg)   # cfg keys = its arguments
+    image = tiled_io.read_image(overview["tiled_key"], state["settings"].get("detector", "haadf"))
+    labels, particles = sam_particles(raw, areas, pixel_size_m(fov, raw.shape), **cfg,  # cfg keys = its arguments
+                                      image=image)
 
     run_dir = Path(state["run"]["run_dir"])
     labels_path = run_dir / "segmentation_labels.npy"
     np.save(labels_path, labels)
     overlay_path = run_dir / "segmentation.png"
-    image = tiled_io.read_image(overview["tiled_key"], state["settings"].get("detector", "haadf"))
     plots.plot_particles(image, labels, particles,
                          f"SAM2: {len(particles)} particles, FOV {fov * 1e9:.0f} nm", path=overlay_path)
     print(f"[sam] {len(particles)} particles from {int(raw.max())} SAM masks, FOV {fov * 1e9:.0f} nm")
