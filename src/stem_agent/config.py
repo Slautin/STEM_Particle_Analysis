@@ -110,9 +110,10 @@ SAFE_METRICS = ("contrast", "edge_sharpness")
 SEGMENTATION = {"method": "otsu", "smooth_nm": 0.3, "min_diameter_nm": 1.0, "edge_px": 1}
 
 # SAM2 particles. min_visible: share of a SAM mask that must stay visible (smaller masks paint
-# over larger ones) to count; min_diameter_nm: drop smaller particles (0 = keep all);
-# edge_px: drop particles touching the frame edge
-SAM = {"min_visible": 0.5, "min_diameter_nm": 0.0, "edge_px": 1}
+# over larger ones) to count; min_diameter_nm / max_diameter_nm: drop smaller / larger particles
+# (equivalent-disk diameter; 0 / None = no limit; the cap keeps support film, holes and big clusters
+# out of EDS, which measures the largest particles first); edge_px: drop particles touching the edge
+SAM = {"min_visible": 0.5, "min_diameter_nm": 0.0, "max_diameter_nm": None, "edge_px": 1}
 
 # OptiSTEM C1/A1 autofocus (auto_focus_node); the node runs only when settings has "auto_focus".
 # fov_m: set before (None = keep); metric: before/after check (larger = better);
@@ -214,6 +215,8 @@ def sam_settings(settings: dict) -> dict:
     cfg = {**SAM, **override}
     if not 0 < cfg["min_visible"] <= 1 or cfg["min_diameter_nm"] < 0 or cfg["edge_px"] < 0:
         raise ValueError(f"bad sam settings: {cfg}")
+    if cfg["max_diameter_nm"] is not None and not cfg["max_diameter_nm"] > cfg["min_diameter_nm"]:
+        raise ValueError(f"sam max_diameter_nm must be > min_diameter_nm: {cfg}")
     return cfg
 
 

@@ -340,6 +340,12 @@ async def test_sam_segment_settings_in_nm(fake):
     fake.sam_labels = sam_cluster()
     update = await sam_segment_node(await with_overview(sam={"min_diameter_nm": 1000.0}))
     assert update["run_status"] == "no_particles"
+    fake.sam_labels = sam_cluster()                                  # FOV 20 nm / 60 px: particles ~7 nm
+    update = await sam_segment_node(await with_overview(sam={"max_diameter_nm": 5.0}))
+    assert update["run_status"] == "no_particles"
+    fake.sam_labels = sam_cluster()
+    update = await sam_segment_node(await with_overview(sam={"max_diameter_nm": 10.0}))
+    assert update["segmentation"]["n_particles"] == 2
 
 
 async def test_sam_device_error_fails_the_node(fake):

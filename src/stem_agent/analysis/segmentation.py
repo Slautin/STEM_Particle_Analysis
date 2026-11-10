@@ -14,8 +14,9 @@
         1) a mask with less than min_visible of its area still visible is dropped
            (it mostly covered smaller masks: a cluster of particles, or the background)
         2) a region inside exactly one other region (a part of a particle) joins it
-    sam_particles(labels, areas, pixel_m, min_visible, min_diameter_nm, edge_px) -> (labels, particles)
-        clean_sam_labels -> drop particles smaller than min_diameter_nm -> find_particles
+    sam_particles(labels, areas, pixel_m, min_visible, min_diameter_nm, max_diameter_nm, edge_px)
+        -> (labels, particles)
+        clean_sam_labels -> drop particles outside min..max_diameter_nm -> find_particles
 
 Notebook cell 21 used sigma 2 px and min_size 50 px; at its 186 nm / 512 px overview that is
 about smooth_nm=0.7 and min_diameter_nm=2.9. The defaults here are smaller, to keep the small
@@ -107,11 +108,15 @@ def clean_sam_labels(labels: np.ndarray, areas: list[dict],
 
 def sam_particles(labels: np.ndarray, areas: list[dict], pixel_m: float,
                   min_visible: float = MIN_VISIBLE, min_diameter_nm: float = 0.0,
+                  max_diameter_nm: float | None = None,
                   edge_px: int = 1) -> tuple[np.ndarray, list[dict]]:
     labels = clean_sam_labels(labels, areas, min_visible)
+    size = np.bincount(labels.ravel())[labels]            # every pixel: the area of its region, px
+    disk_px = np.pi * (1e-9 / 2) ** 2 / pixel_m ** 2      # area of a 1 nm diameter disk, px
     if min_diameter_nm > 0:
-        min_area_px = np.pi * (min_diameter_nm * 1e-9 / 2) ** 2 / pixel_m ** 2
-        labels[np.bincount(labels.ravel())[labels] < min_area_px] = 0
+        labels[size < disk_px * min_diameter_nm ** 2] = 0
+    if max_diameter_nm is not None:
+        labels[size > disk_px * max_diameter_nm ** 2] = 0
     ids = np.unique(labels[labels > 0])                   # renumber 1..n: find_particles needs no gaps
     lookup = np.zeros(int(labels.max()) + 1, dtype=np.int64)
     lookup[ids] = np.arange(1, len(ids) + 1)

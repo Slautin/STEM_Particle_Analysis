@@ -26,13 +26,12 @@ async def sam_segment_node(state: dict) -> dict:
     overview = state["overview"]
     fov = overview.get("fov_m") or (state.get("current") or {}).get("fov_m")
     if not fov:
-        raise ValueError("overview has no FOV; sam min_diameter_nm is in nm")
+        raise ValueError("overview has no FOV; sam diameters are in nm")
     labels_key = await session.call("segment", overview["tiled_key"])
     raw, areas = tiled_io.read_labels(labels_key)
     if list(raw.shape) != list(overview["shape"]):
         raise ValueError(f"SAM labels {raw.shape} do not match the overview {overview['shape']}")
-    labels, particles = sam_particles(raw, areas, pixel_size_m(fov, raw.shape), cfg["min_visible"],
-                                      cfg["min_diameter_nm"], cfg["edge_px"])
+    labels, particles = sam_particles(raw, areas, pixel_size_m(fov, raw.shape), **cfg)   # cfg keys = its arguments
 
     run_dir = Path(state["run"]["run_dir"])
     labels_path = run_dir / "segmentation_labels.npy"

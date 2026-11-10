@@ -2,7 +2,7 @@
 
 Reads:   settings.instrument, settings.run_tag (optional)
 Writes:  run, run_status ("running", or "failed" + errors; `run` is written in both cases),
-         snapshots = [] (a new run: its first status_node call is the readiness gate)
+         snapshots = [] (a new run: its first status_node call is the readiness gate), images = []
 MCP:     list tools, DATA_get_config
 Checks:  no renamed settings keys (RENAMED); MCP reachable; every tool in config.TOOLS
          exists on the instrument; Tiled reachable
@@ -54,9 +54,9 @@ async def preflight_node(state: dict) -> dict:
         await connect(settings["instrument"], run)
     except Exception as exc:
         print(f"[preflight] FAILED: {exc}")
-        return {"run": run, "run_status": "failed", "snapshots": [],
+        return {"run": run, "run_status": "failed", "snapshots": [], "images": [],
                 "errors": [f"preflight: {type(exc).__name__}: {exc}"]}
 
     print(f"[preflight] {run['instrument']} at {run['mcp_url']}: {len(run['tools'])}/{len(TOOLS)} tools, "
           f"Tiled {run['tiled_uri']}, run folder {run_dir}")
-    return {"run": run, "run_status": "running", "snapshots": []}
+    return {"run": run, "run_status": "running", "snapshots": [], "images": []}

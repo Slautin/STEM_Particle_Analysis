@@ -98,3 +98,12 @@ def test_sam_min_diameter_in_nm():
     assert len(sam_particles(*sam_cluster(), pixel_m=1e-9, min_diameter_nm=20)[1]) == 2   # 380 px: 22 nm
     assert sam_particles(*sam_cluster(), pixel_m=1e-9, min_diameter_nm=30)[1] == []
     assert sam_particles(np.zeros((8, 8), dtype=np.uint32), [], pixel_m=1e-9)[1] == []
+
+
+def test_sam_max_diameter_drops_big_regions():
+    big = np.zeros((40, 60), dtype=np.uint32)
+    big[2:38, 2:58] = 1                                              # one region of 2016 px: 51 nm
+    assert len(sam_particles(big, [], pixel_m=1e-9, edge_px=0)[1]) == 1
+    assert sam_particles(big, [], pixel_m=1e-9, edge_px=0, max_diameter_nm=40)[1] == []
+    _, kept = sam_particles(*sam_cluster(), pixel_m=1e-9, min_diameter_nm=20, max_diameter_nm=40)
+    assert [p["area_px"] for p in kept] == [380, 380]               # 22 nm: inside the window

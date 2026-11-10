@@ -86,7 +86,7 @@ Every node has the same shape: `async def x_node(state) -> dict`. It reads its i
 | set FOV | `set_fov`, `get_fov` | `current` | old FOV | cell 12 | ✅ |
 | tune (step `tune: C1` / `A1`) | `set_fov` (if `fov_m`), `correct_aberration` + `acquire_scanned_image` (loop) | `tuning[step]`, `current` | undo the step's total offset | cell 7 (add limit + undo) | ⚠️ mechanics only, needs a corrector in the twin yaml |
 | auto_focus (opt-in) | `get_defocus`, `auto_focus` (OptiSTEM C1A1), `set_defocus` | `tuning["auto_focus"]`, `current` | defocus back if worse or on error (A1 cannot be undone) | asyncroscopy `AutoScriptMicroscope.auto_focus` | ✅ fake; check OptiSTEM time and the timeout text on the microscope |
-| overview | `acquire_scanned_image` | `overview` | – | cells 9, 20 | ✅ |
+| overview (any number of times) | `get_fov`, `acquire_scanned_image` | `overview` (latest), `images` (all, in order) | – | cells 9, 20 | ✅ |
 | find particles (graph: SAM) | `SEGMENTATION_segment` on the overview key | `segmentation`, `particles` | – | cell 28 (SAM) | ✅ fake; check time on the microscope |
 | find particles (Otsu, node only) | none (local) | `segmentation`, `particles` | – | cell 21 | ✅ |
 | EDS | `place_beam`, `acquire_spectrum` | `spectra` | – | cells 22, 29 | ✅ (twin gives per-element values) |
@@ -104,7 +104,8 @@ class ParticleRunState(TypedDict):
     snapshots: NotRequired[list[InstrumentSnapshot]]  # every status_node call: [0] start, [-1] latest
     current:  NotRequired[InstrumentSnapshot]     # latest snapshot + offsets tracked by the tune nodes
     tuning:   Annotated[dict[str, TuneResult], operator.or_]   # protocol step name -> result (also the progress)
-    overview: NotRequired[Overview]               # tiled_key, fov_m, shape
+    overview: NotRequired[Overview]               # the latest image (segment / EDS): tiled_key, fov_m, shape, metrics
+    images:   NotRequired[list[Overview]]         # every overview_node image: [0] first, [-1] latest
     segmentation: NotRequired[Segmentation]       # method, mask_path, overlay_path, n
     particles: NotRequired[list[Particle]]        # id, row, col, area_px, beam_xy
     spectra:   NotRequired[list[SpectrumRecord]]  # particle_id, tiled_key, npy_path

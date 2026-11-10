@@ -1,10 +1,11 @@
 """Acquire one EDS spectrum at the centre of each particle. SIDE EFFECT: parks the beam.
 
-Reads:   particles, overview.shape, settings.instrument / max_particles / beam_order
+Reads:   particles, overview (shape, Tiled key), settings.instrument / max_particles / beam_order / detector
 Writes:  spectra
 MCP:     place_beam, acquire_spectrum("eds")
 Checks:  eds_settings (max_particles 1..LIMITS cap, beam_order); beam position within 0..1
 Saves:   spectra/particle_NNN.npy + eds.png in the run folder
+         (eds.png: the overview with each beam spot | the spectra, spot and spectrum in one colour)
 Beam order: pixel (row, col) -> place_beam [x, y], per instrument (config.INSTRUMENTS beam_order)
 Source:  notebook cells 22, 24, 29
 """
@@ -49,6 +50,7 @@ async def eds_node(state: dict) -> dict:
         print(f"[eds] {len(particles)} particles, measuring the first {limit}")
         particles = particles[:limit]
     shape = state["overview"]["shape"]
+    image = tiled_io.read_image(state["overview"]["tiled_key"], settings.get("detector", "haadf"))   # before the beam moves
 
     out_dir = Path(run["run_dir"]) / "spectra"
     out_dir.mkdir(exist_ok=True)
@@ -71,6 +73,7 @@ async def eds_node(state: dict) -> dict:
               f"{values.size} values, max {values.max():.3g}")
 
     if records:
-        plots.plot_spectra(spectra, [f"particle {r['particle_id']}" for r in records],
-                           Path(run["run_dir"]) / "eds.png", elements)
+        plots.plot_spectra(spectra, [f"#{r['particle_id']}" for r in records],
+                           Path(run["run_dir"]) / "eds.png", elements,
+                           image=image, points=[(p["row"], p["col"]) for p in particles])
     return {"spectra": records}

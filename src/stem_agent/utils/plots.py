@@ -3,7 +3,9 @@
 Uses matplotlib.figure.Figure directly, so it never changes the notebook backend.
 
     save_image(image, path, title, points=None)    overview preview, optional marked points
-    plot_spectra(spectra, labels, path, elements)  EDS: channel lines, or element bars (twin)
+    plot_spectra(spectra, labels, path, elements, image, points)
+                                                   EDS: channel lines, or element bars (twin);
+                                                   optional image with the beam spots beside them
     plot_search(search, title, unit, path, truth)  measured points + fitted curve / surface
                                                    (notebook show_progress_z / show_progress_abb)
     plot_particles(image, labels, particles, title, path)
@@ -62,10 +64,25 @@ def _draw_spectra(ax, spectra: list[np.ndarray], labels: list[str],
 
 
 def plot_spectra(spectra: list[np.ndarray], labels: list[str], path: str | Path,
-                 elements: list[list[str] | None] | None = None) -> Path:
-    """Channel spectra stacked as lines; element spectra (twin) as grouped bars."""
-    fig = Figure(figsize=(9, 4), layout="constrained")
-    _draw_spectra(fig.add_subplot(), spectra, labels, elements)
+                 elements: list[list[str] | None] | None = None, image: np.ndarray | None = None,
+                 points: list[tuple[float, float]] | None = None) -> Path:
+    """Channel spectra stacked as lines; element spectra (twin) as grouped bars.
+    With image + points ((row, col) of each spectrum): the image with the beam spots on the left,
+    each spot in the colour of its spectrum and named by its label."""
+    if image is None:
+        fig = Figure(figsize=(9, 4), layout="constrained")
+        ax_eds = fig.add_subplot()
+    else:
+        fig = Figure(figsize=(14, 5.5), layout="constrained")
+        ax_img, ax_eds = fig.subplots(1, 2, width_ratios=[1, 1.6])
+        ax_img.imshow(image, cmap="gray", interpolation="none")
+        for i, ((row, col), label) in enumerate(zip(points or [], labels)):
+            color = f"C{i % 10}"                     # the default line / bar colour cycle
+            ax_img.plot(col, row, "o", mfc="none", mec=color, ms=10, mew=2)
+            ax_img.text(col + 4, row - 4, label, color=color, weight="bold")
+        ax_img.set_title("beam positions")
+        ax_img.axis("off")
+    _draw_spectra(ax_eds, spectra, labels, elements)
     fig.savefig(path, dpi=100)
     return Path(path)
 

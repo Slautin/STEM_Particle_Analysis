@@ -34,6 +34,7 @@ class SegmentationSettings(TypedDict, total=False):   # overrides of config.SEGM
 class SamSettings(TypedDict, total=False):            # overrides of config.SAM
     min_visible: float
     min_diameter_nm: float
+    max_diameter_nm: float | None
     edge_px: int
 
 
@@ -113,11 +114,13 @@ class Segmentation(TypedDict):
     overlay_path: str                          # .png outlines + aim points
 
 
-class Overview(TypedDict):
+class Overview(TypedDict):                     # one overview_node image
+    index: int                                 # position in state["images"]
     tiled_key: str
     fov_m: float | None
     shape: list[int]                           # [rows, cols]
-    preview_path: str
+    metrics: dict[str, float]                  # analysis.metrics.all_metrics
+    preview_path: str                          # overview_NN.png
 
 
 class Particle(TypedDict):
@@ -143,7 +146,8 @@ class ParticleRunState(TypedDict):
     snapshots: NotRequired[list[InstrumentSnapshot]]   # every status_node call: [0] start, [-1] latest
     current: NotRequired[InstrumentSnapshot]   # latest snapshot + offsets tracked by the tune nodes
     tuning: NotRequired[Annotated[dict[str, TuneResult], operator.or_]]   # step name -> result
-    overview: NotRequired[Overview]
+    overview: NotRequired[Overview]            # the latest image: what segment / EDS use
+    images: NotRequired[list[Overview]]        # every overview_node image: [0] first, [-1] latest
     segmentation: NotRequired[Segmentation]
     particles: NotRequired[list[Particle]]
     spectra: NotRequired[list[SpectrumRecord]]

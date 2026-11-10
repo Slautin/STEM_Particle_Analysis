@@ -183,7 +183,22 @@ async def test_overview(fake):
     update = await overview_node(state)
     assert update["overview"]["tiled_key"] == "image-1"
     assert update["overview"]["shape"] == [64, 64]
+    assert Path(update["overview"]["preview_path"]).name == "overview_00.png"
     assert Path(update["overview"]["preview_path"]).exists()
+    assert set(update["overview"]["metrics"]) >= {"contrast", "edge_sharpness"}
+    assert update["images"] == [update["overview"]]
+
+
+async def test_overview_keeps_every_image(fake):
+    state = await started()
+    state = {**state, **await overview_node(state)}                     # e.g. before focusing
+    state = {**state, **await overview_node(state)}                     # after
+    assert [image["index"] for image in state["images"]] == [0, 1]
+    assert [image["tiled_key"] for image in state["images"]] == ["image-1", "image-2"]
+    assert state["overview"] == state["images"][-1]                     # segment / EDS use the latest
+    assert all(Path(image["preview_path"]).exists() for image in state["images"])
+    state = {**state, **await preflight_node(state)}                    # a new run starts empty
+    assert state["images"] == []
 
 
 # --- eds ---
@@ -208,6 +223,7 @@ async def test_eds_twin_elements(fake):
     assert fake.called("place_beam")[0]["position"] == [0.25, 0.75]
     assert update["spectra"][0]["elements"] == ["Au", "Pt"]
     assert np.load(update["spectra"][0]["npy_path"]).tolist() == [0.6, 0.4]
+    assert (Path(state["run"]["run_dir"]) / "eds.png").exists()        # image with spots | spectra
 
 
 async def test_eds_cap(fake):
